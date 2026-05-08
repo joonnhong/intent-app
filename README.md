@@ -1,50 +1,187 @@
-# Welcome to your Expo app 👋
+# Intent
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A hardware-inspired focus timer that turns digital focus into a tactile ritual.
 
-## Get started
+Intent is an experimental detox/focus application that explores how physical industrial hardware language can influence digital mindfulness and attention.
 
-1. Install dependencies
+Instead of using flat productivity UI patterns, the app treats focus sessions like interacting with a calm precision device.
 
-   ```bash
-   npm install
-   ```
+The project combines:
 
-2. Start the app
+- recessed ceramic interfaces
+- tactile interaction design
+- mechanical-inspired timers
+- ambient lighting systems
+- industrial typography
+- behavioral focus mechanics
 
-   ```bash
-   npx expo start
-   ```
+Built with Expo + React Native.
 
-In the output, you'll find options to open the app in a
+---
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+# Design Philosophy
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+Most productivity apps feel:
 
-## Get a fresh project
+- flat
+- notification-driven
+- SaaS-like
+- visually noisy
 
-When you're ready, run:
+Intent moves in the opposite direction.
 
-```bash
-npm run reset-project
+The interface is inspired by:
+
+- industrial hardware
+- precision instruments
+- tactile control surfaces
+- recessed ceramic panels
+- analog counters
+- embedded LEDs
+- Braun / Teenage Engineering / physical timer devices
+
+The goal is to make focus feel intentional rather than gamified.
+
+---
+
+# Features
+
+## Focus Session System
+
+- Custom hour/minute wheel selector
+- Real-time progress ring
+- Motion-based focus monitoring
+- Penalty system for device movement
+- Success / partial / failed session states
+
+## Hardware-Inspired UI
+
+- Ceramic recessed surfaces
+- Contact gap shadows
+- Glass-like selector windows
+- LED indicator system
+- Mechanical-style reward counter
+- SVG-based timer rendering
+
+## Typography System
+
+- Geist Sans
+- Geist Mono
+- Instrument-style labels
+- Precision-focused visual hierarchy
+
+## Interaction Design
+
+- Tactile button press animations
+- Mechanical digit transitions
+- Subtle LED glow behavior
+- Stable UI layout during timer state changes
+
+---
+
+# Tech Stack
+
+- Expo
+- React Native
+- TypeScript
+- expo-linear-gradient
+- react-native-svg
+- expo-font
+
+---
+
+# Project Structure
+
+```txt
+app/
+components/
+  intent/
+  screens/
+constants/
+assets/
+  fonts/
+  sounds/
+services/
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Key reusable primitives:
 
-## Learn more
+```txt
+CeramicButton
+HardwareLed
+SessionScreen
+TimerScreen
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+---
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+# Design System Notes
 
-## Join the community
+The UI system is built around layered depth rather than visible borders.
 
-Join our community of developers creating universal apps.
+Core concepts:
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- recessed seating
+- contact gaps
+- ambient cavity shadows
+- ceramic bevels
+- inset lighting
+- molded surfaces
+
+Most components avoid hard strokes and instead use:
+
+- gradients
+- shadow layering
+- inset overlays
+- optical depth
+
+---
+
+# Current Status
+
+The project is currently focused on:
+
+- refining tactile interactions
+- polishing hardware realism
+- improving timer feedback systems
+- strengthening the design system consistency
+
+---
+
+# Future Ideas
+
+- Ambient soundscapes
+- Focus statistics visualization
+- Physical device companion concept
+- Haptic rhythm system
+- OLED-inspired display modes
+- Adaptive lighting themes
+
+---
+
+# Running Locally
+
+```bash
+npm install
+npx expo start
+```
+
+---
+
+# Screenshots
+
+_Add screenshots here later._
+
+Example:
+
+```md
+![Intent Hero](docs/screenshots/hero.png)
+```
+
+---
+
+# Notes
+
+This project is heavily design-system driven and intentionally experimental.
+
+The focus is not only productivity, but the emotional feel of interacting with a calm physical object translated into software.
