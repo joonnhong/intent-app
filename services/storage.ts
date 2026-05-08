@@ -2,6 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEY = 'intent.stats.v1';
 const SESSION_HISTORY_KEY = 'intent.sessionHistory.v1';
+const INVITE_CODE_KEY = 'intent.inviteCode.v1';
+const FRIENDS_KEY = 'intent.friends.v1';
+const ACTIVE_SESSION_KEY = 'intent.activeSession.v1';
+const SOUND_EFFECTS_KEY = 'intent.soundEffects.v1';
 const MAX_SESSION_HISTORY = 50;
 
 export type SessionHistoryStatus = 'success' | 'partial' | 'ended';
@@ -14,6 +18,8 @@ export type SessionRecord = {
   status: SessionHistoryStatus;
   pointsEarned: number;
   penaltyCount: number;
+  purpose?: string;
+  note?: string;
 };
 
 export type AchievementId = 'first-detox' | 'one-hour-club' | 'deep-focus' | 'comeback' | 'streak-3';
@@ -29,6 +35,15 @@ export type Stats = {
   totalPoints: number;
   currentStreak: number;
   lastSuccessDate: string | null;
+};
+
+export type Friend = {
+  id: string;
+  inviteCode: string;
+  addedAt: string;
+  displayName: string;
+  currentStreak: number;
+  totalPoints: number;
 };
 
 const DEFAULT_STATS: Stats = {
@@ -82,6 +97,8 @@ function normalizeSessionRecord(value: Partial<SessionRecord> | null): SessionRe
     penaltyCount: typeof value.penaltyCount === 'number' && Number.isFinite(value.penaltyCount)
       ? Math.max(0, value.penaltyCount)
       : 0,
+    purpose: typeof value.purpose === 'string' && value.purpose.trim().length > 0 ? value.purpose.trim() : undefined,
+    note: typeof value.note === 'string' && value.note.trim().length > 0 ? value.note.trim() : undefined,
   };
 }
 
@@ -89,6 +106,55 @@ function createSessionId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function createInviteCode(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const suffix = Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+
+  return `INTENT-${suffix}`;
+}
+
+function normalizeInviteCode(value: string): string {
+  return value.trim().toUpperCase().replace(/\s+/g, '');
+}
+
+function getInviteCodeSeed(inviteCode: string): number {
+  return inviteCode.split('').reduce((sum, character) => sum + character.charCodeAt(0), 0);
+}
+
+function createMockFriendStats(inviteCode: string) {
+  const seed = getInviteCodeSeed(inviteCode);
+
+  return {
+    displayName: `Friend ${inviteCode.slice(-4)}`,
+    currentStreak: seed % 8,
+    totalPoints: 120 + (seed % 24) * 35,
+  };
+}
+
+function normalizeFriend(value: Partial<Friend> | null): Friend | null {
+  if (!value || typeof value.inviteCode !== 'string') {
+    return null;
+  }
+
+  const inviteCode = normalizeInviteCode(value.inviteCode);
+
+  if (!inviteCode.startsWith('INTENT-') || inviteCode.length < 10) {
+    return null;
+  }
+
+  const mockStats = createMockFriendStats(inviteCode);
+  const currentStreak = typeof value.currentStreak === 'number' ? value.currentStreak : mockStats.currentStreak;
+  const totalPoints = typeof value.totalPoints === 'number' ? value.totalPoints : mockStats.totalPoints;
+
+  return {
+    id: typeof value.id === 'string' ? value.id : inviteCode,
+    inviteCode,
+    addedAt: typeof value.addedAt === 'string' ? value.addedAt : new Date().toISOString(),
+    displayName: typeof value.displayName === 'string' ? value.displayName : mockStats.displayName,
+    currentStreak: Number.isFinite(currentStreak) ? Math.max(0, currentStreak) : mockStats.currentStreak,
+    totalPoints: Number.isFinite(totalPoints) ? Math.max(0, totalPoints) : mockStats.totalPoints,
+  };
+}
 function getLocalDateKey(date = new Date()): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -164,6 +230,83 @@ export function calculateAchievements(stats: Stats, history: SessionRecord[]): A
   ];
 }
 
+
+export async function getInviteCode(): Promise<string> {
+  try {
+    const storedInviteCode = await AsyncStorage.getItem(INVITE_CODE_KEY);
+
+    if (storedInviteCode) {
+      return normalizeInviteCode(storedInviteCode);
+    }
+
+    const nextInviteCode = createInviteCode();
+    await AsyncStorage.setItem(INVITE_CODE_KEY, nextInviteCode);
+
+    return nextInviteCode;
+  } catch {
+    return createInviteCode();
+  }
+}
+
+export async function getFriends(): Promise<Friend[]> {
+  try {
+    const storedFriends = await AsyncStorage.getItem(FRIENDS_KEY);
+
+    if (!storedFriends) {
+      return [];
+    }
+
+    const parsedFriends = JSON.parse(storedFriends) as Partial<Friend>[];
+
+    if (!Array.isArray(parsedFriends)) {
+      return [];
+    }
+
+    return parsedFriends
+      .map((friend) => normalizeFriend(friend))
+      .filter((friend): friend is Friend => Boolean(friend))
+      .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime());
+  } catch {
+    return [];
+  }
+}
+
+export async function saveFriends(friends: Friend[]): Promise<void> {
+  try {
+    const normalizedFriends = friends
+      .map((friend) => normalizeFriend(friend))
+      .filter((friend): friend is Friend => Boolean(friend));
+
+    await AsyncStorage.setItem(FRIENDS_KEY, JSON.stringify(normalizedFriends));
+  } catch {
+    // Friend invites are local-only and should not block the account screen.
+  }
+}
+
+export async function addFriendByCode(inviteCode: string): Promise<Friend | null> {
+  const normalizedCode = normalizeInviteCode(inviteCode);
+
+  if (!normalizedCode.startsWith('INTENT-') || normalizedCode.length < 10) {
+    return null;
+  }
+
+  const [ownInviteCode, friends] = await Promise.all([getInviteCode(), getFriends()]);
+
+  if (normalizedCode === ownInviteCode || friends.some((friend) => friend.inviteCode === normalizedCode)) {
+    return null;
+  }
+
+  const mockStats = createMockFriendStats(normalizedCode);
+  const nextFriend: Friend = {
+    id: `${Date.now()}-${normalizedCode}`,
+    inviteCode: normalizedCode,
+    addedAt: new Date().toISOString(),
+    ...mockStats,
+  };
+
+  await saveFriends([nextFriend, ...friends]);
+  return nextFriend;
+}
 export async function getStats(): Promise<Stats> {
   try {
     const storedStats = await AsyncStorage.getItem(STORAGE_KEY);
@@ -243,8 +386,41 @@ export async function resetHistory(): Promise<void> {
   }
 }
 
+export async function resetFriends(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(FRIENDS_KEY);
+    await AsyncStorage.removeItem(INVITE_CODE_KEY);
+  } catch {
+    // Social prototype data should not block reset actions.
+  }
+}
+
+export async function getSoundEffectsEnabled(): Promise<boolean> {
+  try {
+    const storedPreference = await AsyncStorage.getItem(SOUND_EFFECTS_KEY);
+
+    return storedPreference === null ? true : storedPreference === 'true';
+  } catch {
+    return true;
+  }
+}
+
+export async function saveSoundEffectsEnabled(isEnabled: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(SOUND_EFFECTS_KEY, String(isEnabled));
+  } catch {
+    // Sound preference should not block settings interactions.
+  }
+}
+
 export async function resetAll(): Promise<void> {
-  await Promise.all([resetStats(), resetHistory()]);
+  await Promise.all([
+    resetStats(),
+    resetHistory(),
+    resetFriends(),
+    AsyncStorage.removeItem(ACTIVE_SESSION_KEY),
+    AsyncStorage.removeItem(SOUND_EFFECTS_KEY),
+  ]);
 }
 
 export async function recordSession(record: Omit<SessionRecord, 'id' | 'date'>): Promise<SessionRecord> {
@@ -298,3 +474,17 @@ export async function applyFailure(): Promise<Stats> {
   await saveStats(nextStats);
   return nextStats;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+

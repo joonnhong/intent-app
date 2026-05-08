@@ -1,5 +1,5 @@
-import HomeScreen from '../../components/HomeScreen';
+import DashboardScreen from '../../components/screens/DashboardScreen';
 
 export default function Index() {
-  return <HomeScreen />;
+  return <DashboardScreen />;
 }

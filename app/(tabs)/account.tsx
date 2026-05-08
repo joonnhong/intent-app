@@ -1,5 +1,5 @@
 import AccountScreen from '../../components/screens/AccountScreen';
 
-export default function SettingsScreen() {
+export default function AccountRoute() {
   return <AccountScreen />;
 }

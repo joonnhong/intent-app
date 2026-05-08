@@ -41,3 +41,14 @@ app-example
 # generated native folders
 /ios
 /android
+
+# IDE
+.vscode/
+.idea/
+
+# temp
+tmp/
+temp/
+
+# Windows
+Thumbs.db
