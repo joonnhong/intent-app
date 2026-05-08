@@ -3,13 +3,13 @@ import { fonts, typography } from '../../constants/theme';
 export const colors = {
   background: '#F0EEE9',
   surface: '#F0EEE9',
-  ink: '#1F2723',
-  muted: '#69746F',
-  sage: '#4C7A6D',
+  ink: '#111312',
+  muted: '#666B67',
+  sage: '#4F7D70',
   sageSoft: '#E3E9E2',
   clay: '#B8664B',
   claySoft: '#EADDD5',
-  line: 'rgba(31,39,35,0.08)',
+  line: 'rgba(17,19,18,0.08)',
 };
 
 export const layout = {

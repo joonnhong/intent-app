@@ -1,5 +1,0 @@
-import AccountScreen from '../../components/screens/AccountScreen';
-
-export default function SettingsScreen() {
-  return <AccountScreen />;
-}

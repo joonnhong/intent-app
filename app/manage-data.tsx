@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   calculateAchievements,
   getFriends,
-  getInviteCode,
   getSessionHistory,
   getStats,
   resetAll,
@@ -76,25 +75,20 @@ export default function ManageDataScreen() {
   const [sessionCount, setSessionCount] = useState(0);
   const [friendCount, setFriendCount] = useState(0);
   const [achievementCount, setAchievementCount] = useState(0);
-  const [inviteCode, setInviteCode] = useState('');
   const [isResetting, setIsResetting] = useState(false);
 
   const reloadData = useCallback(async () => {
-    const [nextStats, history, friends, nextInviteCode] = await Promise.all([
+    const [nextStats, history, friends] = await Promise.all([
       getStats(),
       getSessionHistory(),
       getFriends(),
-      getInviteCode(),
     ]);
     const achievements = calculateAchievements(nextStats, history);
 
     setStats(nextStats);
     setSessionCount(history.length);
     setFriendCount(friends.length);
-    setInviteCode(nextInviteCode);
     setAchievementCount(achievements.filter((achievement) => achievement.isUnlocked).length);
-
-    console.log('stats after reset:', nextStats);
   }, []);
 
   useEffect(() => {
@@ -102,14 +96,12 @@ export default function ManageDataScreen() {
   }, [reloadData]);
 
   const runReset = useCallback(
-    async (label: string, resetCallback: () => Promise<unknown>) => {
+    async (resetCallback: () => Promise<unknown>) => {
       setIsResetting(true);
-      console.log(`${label} pressed`);
 
       try {
         await resetCallback();
         await reloadData();
-        console.log(`${label} completed`);
       } finally {
         setIsResetting(false);
       }
@@ -118,19 +110,19 @@ export default function ManageDataScreen() {
   );
 
   const handleResetPoints = useCallback(async () => {
-    await runReset('reset points', () => resetStats('points'));
+    await runReset(() => resetStats('points'));
   }, [runReset]);
 
   const handleResetStreak = useCallback(async () => {
-    await runReset('reset streak', () => resetStats('streak'));
+    await runReset(() => resetStats('streak'));
   }, [runReset]);
 
   const handleResetHistory = useCallback(async () => {
-    await runReset('reset history', resetHistory);
+    await runReset(resetHistory);
   }, [runReset]);
 
   const handleResetAll = useCallback(async () => {
-    await runReset('reset all', resetAll);
+    await runReset(resetAll);
   }, [runReset]);
 
   const executeReset = (key: ResetKey) => {
@@ -212,8 +204,6 @@ export default function ManageDataScreen() {
           <Text style={styles.cardBody}>
             Reset actions ask for confirmation first and refresh this screen immediately after they complete.
           </Text>
-          <Text style={styles.debugText}>Current invite code: {inviteCode || 'Not loaded'}</Text>
-
           <View style={styles.actions}>
             {resetActions.map((action) => (
               <View key={action.title} style={styles.actionRow}>
@@ -312,12 +302,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     marginTop: 8,
-  },
-  debugText: {
-    ...typography.meta,
-    color: colors.muted,
-    fontSize: 12,
-    marginTop: 10,
   },
   actions: {
     gap: 12,

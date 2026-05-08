@@ -37,7 +37,7 @@ export function formatDuration(durationMinutes: number) {
 export function formatPlainDuration(totalSeconds: number) {
   const safeSeconds = Math.max(0, totalSeconds);
   const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.round((safeSeconds % 3600) / 60);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
 
   if (hours > 0 && minutes > 0) {
     return `${hours}h ${minutes}m`;

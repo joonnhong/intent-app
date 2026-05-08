@@ -10,7 +10,7 @@ import Svg, { Circle, Defs, Line, RadialGradient, Stop } from 'react-native-svg'
 
 import { CeramicButton } from '../../components/intent/CeramicButton';
 import {
-  applyPartialReward,
+  applyPartialRewardAndFailure,
   applySuccess,
   calculateRewardPoints,
   getSoundEffectsEnabled,
@@ -462,7 +462,7 @@ export default function TimerScreen() {
     setShowResumedMessage(false);
     void clearActiveSession();
     void playSessionSound(END_SOUND, soundEffectsEnabledRef.current, 'end');
-    void applyPartialReward(nextPartialPoints);
+    void applyPartialRewardAndFailure(nextPartialPoints);
     void recordSession({
       durationSeconds: sessionDurationSecondsRef.current,
       completedSeconds: nextCompletedSeconds,
@@ -645,7 +645,7 @@ export default function TimerScreen() {
         hasStoredResultRef.current = true;
         void clearActiveSession();
         void playSessionSound(END_SOUND, soundEffectsEnabledRef.current, 'end');
-        void applyPartialReward(nextPartialPoints);
+        void applyPartialRewardAndFailure(nextPartialPoints);
         void recordSession({
           durationSeconds: sessionDurationSecondsRef.current,
           completedSeconds: nextCompletedSeconds,
@@ -831,7 +831,7 @@ export default function TimerScreen() {
   const message = isLoading
     ? 'Restoring session...'
     : isSuccess
-    ? 'Session complete ??'
+    ? 'Session complete'
     : isEnded && endReason === 'penalties'
     ? 'Session ended after too many penalties'
     : isEnded
@@ -893,24 +893,14 @@ export default function TimerScreen() {
 
           <View style={styles.timerWrap}>
             <View style={styles.dialStage}>
-              <View
-                style={[
-                  styles.dialOuter,
-                  isSuccess && styles.successDialOuter,
-                  isEnded && styles.endedDialOuter,
-                ]}>
+              <View style={styles.dialOuter}>
                 <View style={styles.dialGroove}>
                   <HardwareProgressRing
                     activeTickCount={activeTickCount}
                     tone={isEnded ? 'orange' : 'sage'}
                   />
 
-                  <View
-                    style={[
-                      styles.dialCenter,
-                      isSuccess && styles.successDialCenter,
-                      isEnded && styles.endedDialCenter,
-                    ]}>
+                  <View style={styles.dialCenter}>
                     <View pointerEvents="none" style={styles.dialSurfaceTopLight} />
                     <View pointerEvents="none" style={styles.dialSurfaceInnerRim} />
                     <HardwareLed
@@ -994,7 +984,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.successSoft,
   },
   endedBackground: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.warningSoft,
   },
   container: {
     flex: 1,
@@ -1044,8 +1034,6 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     ...shadows.dial,
   },
-  successDialOuter: {},
-  endedDialOuter: {},
   progressRing: {
     position: 'absolute',
     width: 248,
@@ -1083,8 +1071,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 4,
   },
-  successDialCenter: {},
-  endedDialCenter: {},
   dialSurfaceTopLight: {
     position: 'absolute',
     top: 10,
@@ -1222,10 +1208,6 @@ const styles = StyleSheet.create({
     color: colors.orange,
   },
 });
-
-
-
-
 
 
 

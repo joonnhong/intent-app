@@ -463,10 +463,11 @@ export async function applyPartialReward(pointsEarned: number): Promise<Stats> {
   return nextStats;
 }
 
-export async function applyFailure(): Promise<Stats> {
+export async function applyPartialRewardAndFailure(pointsEarned: number): Promise<Stats> {
   const stats = await getStats();
+  const normalizedPoints = Number.isFinite(pointsEarned) ? Math.max(0, pointsEarned) : 0;
   const nextStats: Stats = {
-    totalPoints: stats.totalPoints,
+    totalPoints: stats.totalPoints + normalizedPoints,
     currentStreak: 0,
     lastSuccessDate: null,
   };

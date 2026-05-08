@@ -22,7 +22,7 @@ import { calculateRewardPoints } from '../../services/storage';
 import { CeramicButton } from '../intent/CeramicButton';
 import { formatDuration, formatTargetTime } from '../intent/format';
 import { HardwareLed } from '../intent/HardwareLed';
-import { colors, radius, shadows, spacing, typography } from '../../constants/theme';
+import { colors, radius, spacing, typography } from '../../constants/theme';
 
 const MIN_DURATION_MINUTES = 5;
 const MAX_DURATION_MINUTES = 12 * 60;
@@ -97,6 +97,8 @@ function WheelPicker({ label, options, scrollRef, selectedValue, onChange }: Whe
   const activeIndexRef = useRef(selectedIndex);
   const hasAlignedInitialValueRef = useRef(false);
   const isProgrammaticScrollRef = useRef(false);
+  const latestScrollOffsetRef = useRef(selectedIndex * WHEEL_ITEM_HEIGHT);
+  const isMomentumActiveRef = useRef(false);
 
   const clearEndDragTimer = () => {
     if (endDragTimerRef.current) {
@@ -181,26 +183,29 @@ function WheelPicker({ label, options, scrollRef, selectedValue, onChange }: Whe
   };
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    latestScrollOffsetRef.current = event.nativeEvent.contentOffset.y;
     setActiveWheelIndex(
       getIndexFromScrollOffset(event.nativeEvent.contentOffset.y),
       !isProgrammaticScrollRef.current
     );
   };
 
-  const handleScrollEndDrag = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const offsetY = event.nativeEvent.contentOffset.y;
-
+  const handleScrollEndDrag = (_event: NativeSyntheticEvent<NativeScrollEvent>) => {
     clearEndDragTimer();
     endDragTimerRef.current = setTimeout(() => {
-      settleToNearestValue(offsetY);
+      if (!isMomentumActiveRef.current) {
+        settleToNearestValue(latestScrollOffsetRef.current);
+      }
     }, 120);
   };
 
   const handleMomentumScrollBegin = () => {
+    isMomentumActiveRef.current = true;
     clearEndDragTimer();
   };
 
   const handleMomentumEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    isMomentumActiveRef.current = false;
     clearEndDragTimer();
     settleToNearestValue(event.nativeEvent.contentOffset.y);
   };
@@ -784,26 +789,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     gap: spacing.sm,
   },
-  header: {
-    borderBottomWidth: 0,
-    borderBottomColor: colors.line,
-    paddingBottom: spacing.md,
-  },
-  panelEyebrow: {
-    ...typography.panelLabel,
-    color: colors.muted,
-  },
-  logo: {
-    ...typography.screenTitle,
-    color: colors.ink,
-    marginTop: spacing.xs,
-  },
-  subtitle: {
-    ...typography.body,
-    color: colors.muted,
-    fontSize: 14,
-    marginTop: spacing.xs,
-  },
   targetReadout: {
     alignItems: 'center',
     paddingVertical: 0,
@@ -1025,11 +1010,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     color: colors.muted,
   },
-  purposeChipScroller: {
-    alignSelf: 'center',
-    flexGrow: 0,
-    maxWidth: '100%',
-  },
   purposeChipRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1042,90 +1022,6 @@ const styles = StyleSheet.create({
     paddingLeft: 3,
     paddingRight: 7,
   },
-  purposeChipBase: {
-    borderRadius: radius.pill,
-    backgroundColor: 'rgba(213,209,200,0.48)',
-    padding: 3,
-    borderWidth: 0,
-    overflow: 'hidden',
-    shadowColor: '#000000',
-    shadowOpacity: 0.07,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 1,
-  },
-  purposeSeatGradient: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: radius.pill,
-  },
-  purposeChipContactGap: {
-    ...StyleSheet.absoluteFillObject,
-    left: 2,
-    right: 2,
-    top: 2,
-    bottom: 2,
-    borderRadius: radius.pill,
-    backgroundColor: 'rgba(34,31,26,0.035)',
-    shadowColor: '#000000',
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  purposeChipGapShade: {
-    position: 'absolute',
-    right: 8,
-    bottom: 1,
-    left: 8,
-    height: 9,
-    borderBottomLeftRadius: radius.pill,
-    borderBottomRightRadius: radius.pill,
-    backgroundColor: 'rgba(42,38,31,0.06)',
-  },
-  purposeChip: {
-    minHeight: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    borderWidth: 0,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    gap: spacing.xs,
-    shadowColor: '#000000',
-    shadowOpacity: 0.11,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
-  purposeEdgeHighlight: {
-    position: 'absolute',
-    left: 8,
-    top: 2,
-    right: 8,
-    height: 7,
-    borderRadius: radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-  },
-  purposeEdgeShade: {
-    position: 'absolute',
-    right: 10,
-    bottom: 1,
-    left: 10,
-    height: 6,
-    borderRadius: radius.pill,
-    backgroundColor: 'rgba(31,28,24,0.045)',
-  },
-  purposeChipPressed: {
-    opacity: 0.9,
-    transform: [{ translateY: 2 }, { scale: 0.985 }],
-    shadowOpacity: 0.04,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-    backgroundColor: colors.surfaceInset,
-  },
   purposeChipText: {
     ...typography.chip,
     color: colors.muted,
@@ -1133,15 +1029,6 @@ const styles = StyleSheet.create({
     lineHeight: 12,
   },
   selectedPurposeChipSurface: {},
-  selectedPurposeChip: {
-    borderTopColor: 'rgba(255,255,255,0.35)',
-    borderLeftColor: colors.line,
-    borderRightColor: colors.line,
-    borderBottomColor: 'rgba(17,19,18,0.16)',
-    backgroundColor: 'rgba(47,48,46,0.12)',
-    shadowOpacity: 0.04,
-    elevation: 1,
-  },
   selectedPurposeChipText: {
     color: colors.ink,
   },
@@ -1341,113 +1228,10 @@ const styles = StyleSheet.create({
     lineHeight: 11,
     letterSpacing: 0.8,
   },
-  rewardValue: {
-    fontFamily: typography.valueLarge.fontFamily,
-    marginTop: 4,
-    color: colors.sage,
-    fontSize: 23,
-    lineHeight: 28,
-  },
-  buttonBase: {
-    marginTop: 2,
-    borderRadius: 28,
-    backgroundColor: 'rgba(209,205,196,0.58)',
-    padding: 6,
-    borderWidth: 0,
-    overflow: 'hidden',
-    shadowColor: '#000000',
-    shadowOpacity: 0.11,
-    shadowRadius: 11,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
-  },
-  buttonSeatGradient: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 28,
-  },
-  buttonContactGap: {
-    ...StyleSheet.absoluteFillObject,
-    left: 4,
-    right: 4,
-    top: 4,
-    bottom: 4,
-    borderRadius: 24,
-    backgroundColor: 'rgba(31,28,24,0.035)',
-    shadowColor: '#000000',
-    shadowOpacity: 0.13,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  buttonGapShade: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    bottom: 4,
-    height: 13,
-    borderBottomLeftRadius: 22,
-    borderBottomRightRadius: 22,
-    backgroundColor: 'rgba(34,30,24,0.075)',
-  },
-  button: {
-    minHeight: 50,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    borderWidth: 0,
-    borderRadius: 22,
-    backgroundColor: colors.surface,
-    gap: spacing.xs,
-    shadowColor: '#000000',
-    shadowOpacity: 0.15,
-    shadowRadius: 9,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 4,
-  },
-  buttonEdgeHighlight: {
-    position: 'absolute',
-    left: 10,
-    top: 4,
-    right: 10,
-    height: 10,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-  },
-  buttonEdgeShade: {
-    position: 'absolute',
-    right: 14,
-    bottom: 3,
-    left: 14,
-    height: 10,
-    borderRadius: 18,
-    backgroundColor: 'rgba(31,28,24,0.055)',
-  },
-  controlGradient: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 21,
-  },
-  innerBevel: {
-    ...StyleSheet.absoluteFillObject,
-    borderWidth: 0,
-    borderRadius: 21,
-    backgroundColor: 'transparent',
-    shadowColor: '#F0EEE9',
-    shadowOpacity: 0.16,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: -1 },
-  },
   buttonText: {
     ...typography.button,
     color: colors.ink,
     fontSize: 16,
-  },
-  buttonPressed: {
-    opacity: 0.94,
-    transform: [{ translateY: 2 }, { scale: 0.985 }],
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
   },
   modalOverlay: {
     flex: 1,
@@ -1524,35 +1308,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.xs,
     marginTop: spacing.lg,
-  },
-  modalCancelButton: {
-    flex: 1,
-    minHeight: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 0,
-    borderColor: colors.line,
-    borderRadius: radius.button,
-    backgroundColor: colors.surface,
-    ...shadows.raisedControl,
-  },
-  modalStartButton: {
-    flex: 1,
-    minHeight: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    borderWidth: 0,
-
-    borderRadius: radius.button,
-    backgroundColor: colors.surface,
-    gap: spacing.xs,
-    shadowColor: '#000000',
-    shadowOpacity: 0.13,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
   },
   modalCancelText: {
     ...typography.button,

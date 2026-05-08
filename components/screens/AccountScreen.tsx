@@ -66,7 +66,6 @@ export default function AccountScreen() {
           setAchievements([]);
           setFriends([]);
           setSoundEffectsEnabled(true);
-          setSoundEffectsEnabled(true);
         }
       });
 
