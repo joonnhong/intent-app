@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   Animated,
   Easing,
@@ -14,6 +14,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -345,85 +346,100 @@ function WheelPicker({ label, options, scrollRef, selectedValue, onChange }: Whe
 
 type RewardDigitProps = {
   targetDigit: string;
+  staggerDelay: number;
 };
 
-function RewardDigit({ targetDigit }: RewardDigitProps) {
-  const transitionProgress = useRef(new Animated.Value(0)).current;
-  const animationRef = useRef<ReturnType<typeof Animated.timing> | null>(null);
-  const animationRunRef = useRef(0);
-  const progressValueRef = useRef(0);
-  const currentDigitRef = useRef(targetDigit);
-  const nextDigitRef = useRef(targetDigit);
-  const [currentDigit, setCurrentDigit] = useState(targetDigit);
-  const [nextDigit, setNextDigit] = useState(targetDigit);
+const DIGIT_BASE_DURATION = 140;
 
+function RewardDigit({ targetDigit, staggerDelay }: RewardDigitProps) {
+  const anim = useRef(new Animated.Value(0)).current;
+  const animRef = useRef<Animated.CompositeAnimation | null>(null);
+  const runIdRef = useRef(0);
+  const progressRef = useRef(0);
+  const shouldStartAnim = useRef(false);
+  const pendingDuration = useRef(DIGIT_BASE_DURATION);
+  const [from, setFrom] = useState(targetDigit);
+  const [to, setTo] = useState(targetDigit);
+
+  // Track progress for mid-animation captures; clean up all state on unmount.
   useEffect(() => {
-    const listenerId = transitionProgress.addListener(({ value }) => {
-      progressValueRef.current = value;
+    const listenerId = anim.addListener(({ value }) => {
+      progressRef.current = value;
     });
-
     return () => {
-      animationRunRef.current += 1;
-      animationRef.current?.stop();
-      transitionProgress.removeListener(listenerId);
+      runIdRef.current += 1;
+      animRef.current?.stop();
+      anim.removeListener(listenerId);
     };
-  }, [transitionProgress]);
+  }, [anim]);
 
-  useEffect(() => {
-    if (targetDigit === nextDigitRef.current) {
-      return;
-    }
-
-    animationRunRef.current += 1;
-    animationRef.current?.stop();
-
-    const visibleDigit = progressValueRef.current >= 0.5 ? nextDigitRef.current : currentDigitRef.current;
-
-    currentDigitRef.current = visibleDigit;
-    nextDigitRef.current = targetDigit;
-    setCurrentDigit(visibleDigit);
-    setNextDigit(targetDigit);
-    transitionProgress.setValue(0);
-    progressValueRef.current = 0;
-
-    const animationRunId = animationRunRef.current;
-    const animation = Animated.timing(transitionProgress, {
+  // Reset the animated value and start the new animation only AFTER React has
+  // committed the new `from`/`to` state to the native layer. This prevents the
+  // one-frame flash that occurs when setValue(0) fires before the new digit
+  // strings are visible to the native thread.
+  useLayoutEffect(() => {
+    if (!shouldStartAnim.current) return;
+    shouldStartAnim.current = false;
+    anim.setValue(0);
+    progressRef.current = 0;
+    const myId = runIdRef.current;
+    const animation = Animated.timing(anim, {
       toValue: 1,
-      duration: 180,
+      duration: pendingDuration.current,
+      delay: staggerDelay,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     });
-
-    animationRef.current = animation;
+    animRef.current = animation;
     animation.start(({ finished }) => {
-      if (!finished || animationRunId !== animationRunRef.current) {
-        return;
-      }
-
-      currentDigitRef.current = targetDigit;
-      nextDigitRef.current = targetDigit;
-      setCurrentDigit(targetDigit);
-      setNextDigit(targetDigit);
-      transitionProgress.setValue(0);
-      progressValueRef.current = 0;
+      if (!finished || runIdRef.current !== myId) return;
+      progressRef.current = 1;
+      // Leave anim at 1.0 — no reset here, no state update, no stale commit.
     });
-  }, [targetDigit, transitionProgress]);
+  }, [from, to, anim, staggerDelay]);
 
-  const currentTranslateY = transitionProgress.interpolate({
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (targetDigit === to) return;
+    runIdRef.current += 1;
+    animRef.current?.stop();
+    // Which digit is dominant at the moment of interruption?
+    const visibleDigit = progressRef.current >= 0.5 ? to : from;
+    // Already showing the target visually — snap silently, no animation needed.
+    if (visibleDigit === targetDigit) {
+      setFrom(targetDigit);
+      setTo(targetDigit);
+      return;
+    }
+    // Longer roll for digits that are farther apart.
+    const distance = Math.abs(parseInt(targetDigit, 10) - parseInt(visibleDigit, 10));
+    pendingDuration.current = DIGIT_BASE_DURATION + distance * 20;
+    shouldStartAnim.current = true;
+    setFrom(visibleDigit);
+    setTo(targetDigit);
+    // `from`/`to` intentionally omitted from deps — closure captures latest
+    // values on each targetDigit change; adding them would cause extra runs.
+  }, [targetDigit]);
+
+  const fromOpacity = anim.interpolate({
+    inputRange: [0, 0.65, 1],
+    outputRange: [1, 0.06, 0],
+    extrapolate: 'clamp',
+  });
+  const fromTranslateY = anim.interpolate({
     inputRange: [0, 1],
     outputRange: [0, -8],
+    extrapolate: 'clamp',
   });
-  const currentOpacity = transitionProgress.interpolate({
-    inputRange: [0, 0.82, 1],
-    outputRange: [1, 0.08, 0],
+  const toOpacity = anim.interpolate({
+    inputRange: [0, 0.25, 1],
+    outputRange: [0, 0.1, 1],
+    extrapolate: 'clamp',
   });
-  const nextTranslateY = transitionProgress.interpolate({
+  const toTranslateY = anim.interpolate({
     inputRange: [0, 1],
     outputRange: [8, 0],
-  });
-  const nextOpacity = transitionProgress.interpolate({
-    inputRange: [0, 0.18, 1],
-    outputRange: [0, 0.18, 1],
+    extrapolate: 'clamp',
   });
 
   return (
@@ -469,22 +485,16 @@ function RewardDigit({ targetDigit }: RewardDigitProps) {
         <Animated.Text
           style={[
             styles.rewardDigitText,
-            {
-              opacity: currentOpacity,
-              transform: [{ translateY: currentTranslateY }],
-            },
+            { opacity: fromOpacity, transform: [{ translateY: fromTranslateY }] },
           ]}>
-          {currentDigit}
+          {from}
         </Animated.Text>
         <Animated.Text
           style={[
             styles.rewardDigitText,
-            {
-              opacity: nextOpacity,
-              transform: [{ translateY: nextTranslateY }],
-            },
+            { opacity: toOpacity, transform: [{ translateY: toTranslateY }] },
           ]}>
-          {nextDigit}
+          {to}
         </Animated.Text>
       </View>
     </LinearGradient>
@@ -502,7 +512,11 @@ function RewardCounter({ rewardPoints }: RewardCounterProps) {
     <View style={styles.rewardCounter}>
       <View style={styles.rewardCounterRow}>
         {targetDigits.map((digit, index) => (
-          <RewardDigit key={index} targetDigit={digit} />
+          <RewardDigit
+            key={index}
+            targetDigit={digit}
+            staggerDelay={(targetDigits.length - 1 - index) * 40}
+          />
         ))}
       </View>
       <Text style={styles.rewardCounterLabel}>POINTS</Text>
@@ -512,6 +526,8 @@ function RewardCounter({ rewardPoints }: RewardCounterProps) {
 
 export default function SessionScreen() {
   const router = useRouter();
+  const { height: screenHeight } = useWindowDimensions();
+  const isCompact = screenHeight < 750;
   const hourScrollRef = useRef<ScrollView>(null);
   const minuteScrollRef = useRef<ScrollView>(null);
   const initialDuration = splitDuration(DEFAULT_DURATION_MINUTES);
@@ -567,14 +583,10 @@ export default function SessionScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        nestedScrollEnabled
-        showsVerticalScrollIndicator={false}
-        style={styles.pageList}
-        contentContainerStyle={styles.container}>
-        <View style={styles.targetPanel}>
-          <View style={styles.timerZone}>
+      <View style={styles.pageList}>
+        <View style={[styles.container, isCompact && styles.containerCompact]}>
+        <View style={[styles.targetPanel, { gap: isCompact ? spacing.xs : spacing.sm }]}>
+          <View style={[styles.timerZone, { gap: isCompact ? spacing.xs : spacing.sm }]}>
             <View style={styles.targetReadout}>
               <Text style={styles.targetLabel}>Target time</Text>
               <Text style={styles.targetValue}>{sessionPreview.targetTime}</Text>
@@ -632,7 +644,7 @@ export default function SessionScreen() {
                 colors={['#DEDAD0', '#F6F3EC']}
                 start={{ x: 0.5, y: 0 }}
                 end={{ x: 0.5, y: 1 }}
-                style={styles.noteSeat}>
+                style={[styles.noteSeat, { height: isCompact ? 70 : 100 }]}>
                 <LinearGradient
                   pointerEvents="none"
                   colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.58)']}
@@ -698,7 +710,8 @@ export default function SessionScreen() {
             </CeramicButton>
           </View>
         </View>
-      </ScrollView>
+        </View>
+      </View>
 
       <Modal
         animationType="fade"
@@ -738,12 +751,15 @@ export default function SessionScreen() {
             </View>
 
             <View style={styles.modalActions}>
-              <CeramicButton size="medium" onPress={() => setIsConfirmVisible(false)}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
+              <CeramicButton
+                size="medium"
+                style={{ flex: 2 }}
+                onPress={() => setIsConfirmVisible(false)}>
+                <Text style={styles.modalCancelText} numberOfLines={1}>Cancel</Text>
               </CeramicButton>
-              <CeramicButton size="medium" onPress={startSession}>
+              <CeramicButton size="medium" style={{ flex: 3 }} onPress={startSession}>
                 <HardwareLed size="small" />
-                <Text style={styles.modalStartText}>Start session</Text>
+                <Text style={styles.modalStartText} numberOfLines={1}>Start session</Text>
               </CeramicButton>
             </View>
           </View>
@@ -763,21 +779,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   container: {
-    flexGrow: 1,
+    flex: 1,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.lg,
   },
+  containerCompact: {
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
   targetPanel: {
     flex: 1,
     justifyContent: 'space-between',
-    gap: spacing.sm,
   },
   timerZone: {
-    flex: 5,
+    flex: 1,
     justifyContent: 'flex-end',
-    gap: spacing.sm,
-    minHeight: 350,
   },
   formZone: {
     flex: 0,
@@ -1037,7 +1054,6 @@ const styles = StyleSheet.create({
   },
   noteSeat: {
     width: '100%',
-    height: 100,
     borderWidth: 0,
     overflow: 'hidden',
     borderRadius: NOTE_RADIUS,
@@ -1306,7 +1322,7 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     flexDirection: 'row',
-    gap: spacing.xs,
+    gap: spacing.sm,
     marginTop: spacing.lg,
   },
   modalCancelText: {
