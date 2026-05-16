@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-import { colors, typography } from './theme';
+import { colors, typography } from '../../constants/theme';
 
 type EmptyStateProps = {
   title: string;
@@ -19,8 +19,6 @@ export function EmptyState({ title, body }: EmptyStateProps) {
 const styles = StyleSheet.create({
   emptyStateBox: {
     alignItems: 'center',
-    borderTopWidth: 0,
-    borderTopColor: colors.line,
     marginTop: 10,
     paddingTop: 16,
     paddingBottom: 6,

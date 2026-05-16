@@ -56,14 +56,14 @@ export function formatPlainDuration(totalSeconds: number) {
 
 export function formatSessionStatus(status: SessionRecord['status']) {
   if (status === 'success') {
-    return 'Completed';
+    return 'Done';
   }
 
   if (status === 'partial') {
-    return 'Ended early';
+    return 'Quit';
   }
 
-  return 'Too many penalties';
+  return 'Penalized';
 }
 export function formatSessionDate(date: string) {
   const parsedDate = new Date(date);

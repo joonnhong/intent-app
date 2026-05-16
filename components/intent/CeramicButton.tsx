@@ -48,7 +48,7 @@ export function CeramicButton({
 
         return (
           <LinearGradient
-            colors={['#DEDAD0', '#F6F3EC']}
+            colors={['#DEDAD0', '#FDFAF5']}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
             style={[styles.recessedSeat, styles[`${size}Seat`]]}>
@@ -61,7 +61,7 @@ export function CeramicButton({
               ]}
             />
             <LinearGradient
-              colors={['#F6F3EC', '#DEDAD0']}
+              colors={['#FAF8F3', '#DEDAD2']}
               start={{ x: 0.5, y: 0 }}
               end={{ x: 0.5, y: 1 }}
               style={[
@@ -94,10 +94,10 @@ const styles = StyleSheet.create({
   },
   contactGap: {
     position: 'absolute',
-    backgroundColor: 'rgba(34,31,26,0.035)',
+    backgroundColor: 'rgba(34,31,26,0.055)',
     shadowColor: '#000000',
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
+    shadowOpacity: 0.18,
+    shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
     elevation: 1,
   },
@@ -154,12 +154,13 @@ const styles = StyleSheet.create({
   largeCompactSeat: {
     borderRadius: 20,
     padding: 5,
+    paddingBottom: 8,
   },
   largeCompactContactGap: {
     left: 5,
     right: 5,
     top: 5,
-    bottom: 5,
+    bottom: 8,
     borderRadius: 16,
   },
   largeCompactBevel: {

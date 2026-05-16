@@ -16,6 +16,9 @@ export const colors = {
   yellow: '#EAB308',
   successSoft: '#E3E9E2',
   warningSoft: '#EADDD5',
+  sageSoft: '#E3E9E2',
+  clay: '#B8664B',
+  claySoft: '#EADDD5',
 } as const;
 
 export const spacing = {

@@ -5,7 +5,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject }
 import {
   Animated,
   Easing,
-  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -21,9 +20,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { calculateRewardPoints } from '../../services/storage';
 import { CeramicButton } from '../intent/CeramicButton';
+import { ConfirmModal } from '../intent/ConfirmModal';
 import { formatDuration, formatTargetTime } from '../intent/format';
 import { HardwareLed } from '../intent/HardwareLed';
-import { colors, radius, spacing, typography } from '../../constants/theme';
+import { colors, spacing, typography } from '../../constants/theme';
 
 const MIN_DURATION_MINUTES = 5;
 const MAX_DURATION_MINUTES = 12 * 60;
@@ -36,8 +36,8 @@ const WHEEL_PICKER_HEIGHT = WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_ITEMS;
 const WHEEL_CENTER_OFFSET = (WHEEL_PICKER_HEIGHT - WHEEL_ITEM_HEIGHT) / 2;
 const NOTE_RADIUS = 22;
 const NOTE_GAP_INSET = 4;
-const NOTE_INNER_INSET = 6;
 const NOTE_GAP_RADIUS = NOTE_RADIUS - 2;
+const NOTE_INNER_INSET = 6;
 const NOTE_INNER_RADIUS = NOTE_RADIUS - 4;
 const WHEEL_FIELD_WIDTH = 108;
 const WHEEL_RADIUS = 24;
@@ -51,7 +51,7 @@ const WHEEL_SELECTED_RADIUS = 14;
 const REWARD_COUNTER_DIGITS = 5;
 const REWARD_COUNTER_MAX = 99999;
 const REWARD_DIGIT_HEIGHT = 30;
-const PURPOSE_CHIPS = ['Study', 'Work', 'Reading', 'Sleep'];
+const PURPOSE_CHIPS = ['Study', 'Work', 'Reading', 'Creative'];
 
 function clampDuration(minutes: number) {
   return Math.min(MAX_DURATION_MINUTES, Math.max(MIN_DURATION_MINUTES, minutes));
@@ -126,7 +126,7 @@ function WheelPicker({ label, options, scrollRef, selectedValue, onChange }: Whe
       return;
     }
 
-    if (selectedIndex !== activeIndexRef.current) {
+    if (selectedIndex !== activeIndexRef.current && !isProgrammaticScrollRef.current) {
       activeIndexRef.current = selectedIndex;
       setActiveIndex(selectedIndex);
       isProgrammaticScrollRef.current = true;
@@ -169,26 +169,18 @@ function WheelPicker({ label, options, scrollRef, selectedValue, onChange }: Whe
 
   const settleToNearestValue = (scrollOffset: number) => {
     const nextIndex = getIndexFromScrollOffset(scrollOffset);
-
-    isProgrammaticScrollRef.current = true;
-    scrollRef.current?.scrollTo({
-      animated: true,
-      y: nextIndex * WHEEL_ITEM_HEIGHT,
-    });
     setActiveWheelIndex(nextIndex, false);
     commitIndex(nextIndex);
-
-    setTimeout(() => {
-      isProgrammaticScrollRef.current = false;
-    }, 180);
   };
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     latestScrollOffsetRef.current = event.nativeEvent.contentOffset.y;
-    setActiveWheelIndex(
-      getIndexFromScrollOffset(event.nativeEvent.contentOffset.y),
-      !isProgrammaticScrollRef.current
-    );
+    if (!isProgrammaticScrollRef.current) {
+      setActiveWheelIndex(
+        getIndexFromScrollOffset(event.nativeEvent.contentOffset.y),
+        true
+      );
+    }
   };
 
   const handleScrollEndDrag = (_event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -217,14 +209,14 @@ function WheelPicker({ label, options, scrollRef, selectedValue, onChange }: Whe
       <View style={styles.wheelFrame}>
         <LinearGradient
           pointerEvents="none"
-          colors={['#DEDAD0', '#F6F3EC']}
+          colors={['#DEDAD0', '#FDFAF5']}
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
           style={styles.wheelFrameGradient}
         />
         <LinearGradient
           pointerEvents="none"
-          colors={['rgba(52,47,39,0.14)', 'rgba(52,47,39,0.075)', 'rgba(52,47,39,0.024)']}
+          colors={['rgba(52,47,39,0.22)', 'rgba(52,47,39,0.11)', 'rgba(52,47,39,0.036)']}
           locations={[0, 0.5, 1]}
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
@@ -298,6 +290,8 @@ function WheelPicker({ label, options, scrollRef, selectedValue, onChange }: Whe
             scrollEnabled
             showsVerticalScrollIndicator={false}
             decelerationRate="fast"
+            snapToInterval={WHEEL_ITEM_HEIGHT}
+            snapToAlignment="start"
             nestedScrollEnabled
             contentContainerStyle={styles.wheelContent}
             onScroll={handleScroll}
@@ -313,7 +307,9 @@ function WheelPicker({ label, options, scrollRef, selectedValue, onChange }: Whe
                 <Pressable
                   key={item}
                   onPress={() => {
-                    setActiveWheelIndex(itemIndex, true);
+                    if (itemIndex !== activeIndexRef.current) {
+                      void playSelectionHaptic();
+                    }
                     isProgrammaticScrollRef.current = true;
                     scrollRef.current?.scrollTo({
                       animated: true,
@@ -325,15 +321,20 @@ function WheelPicker({ label, options, scrollRef, selectedValue, onChange }: Whe
                     }, 180);
                   }}
                   style={styles.wheelItem}>
-                  <Text
-                    style={[
-                      styles.wheelText,
-                      distance === 1 && styles.nearWheelText,
-                      distance > 1 && styles.farWheelText,
-                      isSelected && styles.selectedWheelText,
-                    ]}>
-                    {String(item).padStart(2, '0')}
-                  </Text>
+                  {isSelected ? (
+                    <View style={styles.wheelEngravedWrap}>
+                      <Text style={[styles.wheelText, styles.selectedWheelText, styles.selectedWheelHighlight]} importantForAccessibility="no">
+                        {String(item).padStart(2, '0')}
+                      </Text>
+                      <Text style={[styles.wheelText, styles.selectedWheelText, styles.selectedWheelEngraved]}>
+                        {String(item).padStart(2, '0')}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={[styles.wheelText, distance === 1 && styles.nearWheelText, distance > 1 && styles.farWheelText]}>
+                      {String(item).padStart(2, '0')}
+                    </Text>
+                  )}
                 </Pressable>
               );
             })}
@@ -444,13 +445,13 @@ function RewardDigit({ targetDigit, staggerDelay }: RewardDigitProps) {
 
   return (
     <LinearGradient
-      colors={['#DEDAD0', '#F6F3EC']}
+      colors={['#DEDAD0', '#FDFAF5']}
       start={{ x: 0.5, y: 0 }}
       end={{ x: 0.5, y: 1 }}
       style={styles.rewardDigitShell}>
       <LinearGradient
         pointerEvents="none"
-        colors={['rgba(52,47,39,0.14)', 'rgba(52,47,39,0.075)', 'rgba(52,47,39,0.024)']}
+        colors={['rgba(52,47,39,0.22)', 'rgba(52,47,39,0.11)', 'rgba(52,47,39,0.036)']}
         locations={[0, 0.5, 1]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
@@ -483,17 +484,21 @@ function RewardDigit({ targetDigit, staggerDelay }: RewardDigitProps) {
         />
         <View pointerEvents="none" style={styles.rewardDigitBottomGlint} />
         <Animated.Text
-          style={[
-            styles.rewardDigitText,
-            { opacity: fromOpacity, transform: [{ translateY: fromTranslateY }] },
-          ]}>
+          style={[styles.rewardDigitText, styles.rewardDigitHighlight, { opacity: fromOpacity, transform: [{ translateY: fromTranslateY }] }]}
+          importantForAccessibility="no">
           {from}
         </Animated.Text>
         <Animated.Text
-          style={[
-            styles.rewardDigitText,
-            { opacity: toOpacity, transform: [{ translateY: toTranslateY }] },
-          ]}>
+          style={[styles.rewardDigitText, styles.rewardDigitHighlight, { opacity: toOpacity, transform: [{ translateY: toTranslateY }] }]}
+          importantForAccessibility="no">
+          {to}
+        </Animated.Text>
+        <Animated.Text
+          style={[styles.rewardDigitText, styles.rewardDigitEngraved, { opacity: fromOpacity, transform: [{ translateY: fromTranslateY }] }]}>
+          {from}
+        </Animated.Text>
+        <Animated.Text
+          style={[styles.rewardDigitText, styles.rewardDigitEngraved, { opacity: toOpacity, transform: [{ translateY: toTranslateY }] }]}>
           {to}
         </Animated.Text>
       </View>
@@ -583,8 +588,7 @@ export default function SessionScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.pageList}>
-        <View style={[styles.container, isCompact && styles.containerCompact]}>
+      <View style={[styles.container, isCompact && styles.containerCompact]}>
         <View style={[styles.targetPanel, { gap: isCompact ? spacing.xs : spacing.sm }]}>
           <View style={[styles.timerZone, { gap: isCompact ? spacing.xs : spacing.sm }]}>
             <View style={styles.targetReadout}>
@@ -601,7 +605,10 @@ export default function SessionScreen() {
                 onChange={(hour) => updateDuration(hour, selectedMinutes)}
               />
 
-              <Text style={styles.wheelSeparator}>:</Text>
+              <View style={styles.wheelSeparatorWrap}>
+                <Text style={[styles.wheelSeparator, styles.wheelSeparatorHighlight]} importantForAccessibility="no">:</Text>
+                <Text style={[styles.wheelSeparator, styles.wheelSeparatorEngraved]}>:</Text>
+              </View>
 
               <WheelPicker
                 label="MIN"
@@ -641,20 +648,13 @@ export default function SessionScreen() {
             <View style={styles.noteSection}>
               <Text style={styles.noteLabel}>Note</Text>
               <LinearGradient
-                colors={['#DEDAD0', '#F6F3EC']}
+                colors={['#DEDAD0', '#FDFAF5']}
                 start={{ x: 0.5, y: 0 }}
                 end={{ x: 0.5, y: 1 }}
                 style={[styles.noteSeat, { height: isCompact ? 70 : 100 }]}>
                 <LinearGradient
                   pointerEvents="none"
-                  colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.58)']}
-                  start={{ x: 0.5, y: 0 }}
-                  end={{ x: 0.5, y: 1 }}
-                  style={styles.noteShellBottomBevel}
-                />
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={['rgba(52,47,39,0.14)', 'rgba(52,47,39,0.075)', 'rgba(52,47,39,0.024)']}
+                  colors={['rgba(52,47,39,0.22)', 'rgba(52,47,39,0.11)', 'rgba(52,47,39,0.036)']}
                   locations={[0, 0.5, 1]}
                   start={{ x: 0.5, y: 0 }}
                   end={{ x: 0.5, y: 1 }}
@@ -684,6 +684,14 @@ export default function SessionScreen() {
                     end={{ x: 0.5, y: 1 }}
                     style={styles.noteBottomHighlight}
                   />
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0)']}
+                    locations={[0, 0.22, 0.78, 1]}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={styles.noteBottomGlint}
+                  />
                   <TextInput
                     multiline
                     placeholder="Add a note (optional)"
@@ -704,77 +712,30 @@ export default function SessionScreen() {
               <RewardCounter rewardPoints={sessionPreview.rewardPoints} />
             </View>
 
-            <CeramicButton size="largeCompact" onPress={() => setIsConfirmVisible(true)}>
+            <CeramicButton size="largeCompact" onPress={() => setIsConfirmVisible(true)} surfaceStyle={styles.startButtonSurface}>
               <HardwareLed size="medium" />
               <Text style={styles.buttonText}>Start detox</Text>
             </CeramicButton>
           </View>
         </View>
-        </View>
       </View>
 
-      <Modal
-        animationType="fade"
-        transparent
+      <ConfirmModal
         visible={isConfirmVisible}
-        onRequestClose={() => setIsConfirmVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalEyebrow}>Ready to begin?</Text>
-            <Text style={styles.modalTitle}>Start this detox session</Text>
-
-            <View style={styles.modalSummary}>
-              <View style={styles.modalRow}>
-                <Text style={styles.modalLabel}>Target time</Text>
-                <Text style={styles.modalValue}>{sessionPreview.targetTime}</Text>
-              </View>
-              <View style={styles.modalRow}>
-                <Text style={styles.modalLabel}>Duration</Text>
-                <Text style={styles.modalValue}>{sessionPreview.durationLabel}</Text>
-              </View>
-              <View style={styles.modalRow}>
-                <Text style={styles.modalLabel}>Estimated reward</Text>
-                <Text style={styles.modalReward}>{sessionPreview.rewardLabel}</Text>
-              </View>
-              {selectedPurpose ? (
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Purpose</Text>
-                  <Text style={styles.modalValue}>#{selectedPurpose}</Text>
-                </View>
-              ) : null}
-              {sessionNote.trim() ? (
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Note</Text>
-                  <Text style={styles.modalValue}>{sessionNote.trim()}</Text>
-                </View>
-              ) : null}
-            </View>
-
-            <View style={styles.modalActions}>
-              <CeramicButton
-                size="medium"
-                style={{ flex: 2 }}
-                onPress={() => setIsConfirmVisible(false)}>
-                <Text style={styles.modalCancelText} numberOfLines={1}>Cancel</Text>
-              </CeramicButton>
-              <CeramicButton size="medium" style={{ flex: 3 }} onPress={startSession}>
-                <HardwareLed size="small" />
-                <Text style={styles.modalStartText} numberOfLines={1}>Start session</Text>
-              </CeramicButton>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        targetTime={sessionPreview.targetTime}
+        durationLabel={sessionPreview.durationLabel}
+        rewardLabel={sessionPreview.rewardLabel}
+        purpose={selectedPurpose}
+        note={sessionNote.trim() || undefined}
+        onCancel={() => setIsConfirmVisible(false)}
+        onConfirm={startSession}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  pageList: {
     flex: 1,
     backgroundColor: colors.background,
   },
@@ -793,8 +754,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   timerZone: {
-    flex: 1,
-    justifyContent: 'flex-end',
+    flexShrink: 0,
   },
   formZone: {
     flex: 0,
@@ -815,6 +775,9 @@ const styles = StyleSheet.create({
     ...typography.panelLabel,
     color: colors.muted,
     textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.16)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
   },
   targetValue: {
     ...typography.valueLarge,
@@ -840,6 +803,9 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginBottom: spacing.xs,
     textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.16)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
   },
   wheelFrame: {
     height: WHEEL_SLOT_HEIGHT,
@@ -869,11 +835,11 @@ const styles = StyleSheet.create({
     bottom: WHEEL_GAP_INSET + 1,
     left: WHEEL_GAP_INSET + 1,
     borderRadius: WHEEL_GAP_RADIUS - 1,
-    backgroundColor: 'rgba(17,19,18,0.018)',
+    backgroundColor: 'rgba(17,19,18,0.022)',
     shadowColor: '#111312',
-    shadowOpacity: 0.16,
-    shadowRadius: 4,
-    shadowOffset: { width: 1, height: 2 },
+    shadowOpacity: 0.24,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
     elevation: 1,
   },
   wheelField: {
@@ -933,9 +899,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(246,243,236,0.76)',
     zIndex: 1,
     shadowColor: '#000000',
-    shadowOpacity: 0.075,
-    shadowRadius: 9,
-    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
   },
   wheelSelectionGradient: {
     ...StyleSheet.absoluteFillObject,
@@ -990,20 +957,37 @@ const styles = StyleSheet.create({
     fontFamily: typography.meta.fontFamily,
     color: colors.muted,
     fontSize: 20,
-    opacity: 0.48,
+    opacity: 0.65,
   },
   nearWheelText: {
-    opacity: 0.7,
+    opacity: 0.85,
   },
   farWheelText: {
-    opacity: 0.22,
+    opacity: 0.32,
   },
   selectedWheelText: {
     fontFamily: typography.meta.fontFamily,
     color: colors.ink,
     fontSize: 34,
+    lineHeight: WHEEL_ITEM_HEIGHT,
     opacity: 1,
-    transform: [{ translateY: -2 }],
+  },
+  wheelEngravedWrap: {
+    alignItems: 'center',
+  },
+  selectedWheelHighlight: {
+    position: 'absolute',
+    top: 2,
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    color: 'rgba(255,255,255,0.72)',
+  },
+  selectedWheelEngraved: {
+    color: 'rgba(17,19,18,0.88)',
+    textShadowColor: 'rgba(0,0,0,0.22)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 1,
   },
   wheelSeparator: {
     fontFamily: typography.meta.fontFamily,
@@ -1011,33 +995,46 @@ const styles = StyleSheet.create({
     color: 'rgba(17,19,18,0.58)',
     fontSize: 38,
     lineHeight: 42,
+  },
+  wheelSeparatorWrap: {
+    alignSelf: 'center',
     marginTop: spacing.lg,
   },
+  wheelSeparatorHighlight: {
+    position: 'absolute',
+    top: 1,
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    color: 'rgba(255,255,255,0.68)',
+  },
+  wheelSeparatorEngraved: {
+    color: 'rgba(17,19,18,0.52)',
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 1,
+  },
   purposeSection: {
-    alignItems: 'center',
     gap: 5,
-    paddingHorizontal: spacing.xs,
   },
-  purposeCluster: {
-    alignSelf: 'center',
-    maxWidth: '100%',
-  },
+  purposeCluster: {},
   purposeLabel: {
     ...typography.panelLabel,
-    alignSelf: 'flex-start',
     color: colors.muted,
+    textShadowColor: 'rgba(0,0,0,0.16)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
   },
   purposeChipRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 10,
     justifyContent: 'center',
-    paddingHorizontal: 0,
+    gap: 8,
   },
   purposeChipSurface: {
-    gap: 2,
-    paddingLeft: 3,
-    paddingRight: 7,
+    gap: 0,
+    paddingLeft: 0,
+    paddingRight: 8,
   },
   purposeChipText: {
     ...typography.chip,
@@ -1054,8 +1051,6 @@ const styles = StyleSheet.create({
   },
   noteSeat: {
     width: '100%',
-    borderWidth: 0,
-    overflow: 'hidden',
     borderRadius: NOTE_RADIUS,
     padding: NOTE_INNER_INSET,
     position: 'relative',
@@ -1068,15 +1063,6 @@ const styles = StyleSheet.create({
     left: NOTE_GAP_INSET,
     borderRadius: NOTE_GAP_RADIUS,
   },
-  noteShellBottomBevel: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    left: 0,
-    height: 24,
-    borderBottomLeftRadius: NOTE_RADIUS,
-    borderBottomRightRadius: NOTE_RADIUS,
-  },
   noteCavityShadow: {
     position: 'absolute',
     top: NOTE_GAP_INSET + 1,
@@ -1084,11 +1070,11 @@ const styles = StyleSheet.create({
     bottom: NOTE_GAP_INSET + 1,
     left: NOTE_GAP_INSET + 1,
     borderRadius: NOTE_GAP_RADIUS - 1,
-    backgroundColor: 'rgba(17,19,18,0.018)',
+    backgroundColor: 'rgba(17,19,18,0.022)',
     shadowColor: '#111312',
-    shadowOpacity: 0.16,
-    shadowRadius: 4,
-    shadowOffset: { width: 1, height: 2 },
+    shadowOpacity: 0.24,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
     elevation: 1,
   },
   noteField: {
@@ -1116,6 +1102,15 @@ const styles = StyleSheet.create({
     bottom: 0,
     height: 14,
   },
+  noteBottomGlint: {
+    position: 'absolute',
+    bottom: 1,
+    left: 0,
+    right: 0,
+    height: 1,
+    borderRadius: 1,
+    zIndex: 3,
+  },
   noteBottomDepth: {
     position: 'absolute',
     left: 0,
@@ -1126,6 +1121,9 @@ const styles = StyleSheet.create({
   noteLabel: {
     ...typography.panelLabel,
     color: colors.muted,
+    textShadowColor: 'rgba(0,0,0,0.16)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
   },
   noteInput: {
     ...typography.body,
@@ -1145,6 +1143,9 @@ const styles = StyleSheet.create({
   rewardLabel: {
     ...typography.panelLabel,
     color: colors.muted,
+    textShadowColor: 'rgba(0,0,0,0.16)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
   },
   rewardCounter: {
     alignItems: 'center',
@@ -1179,11 +1180,11 @@ const styles = StyleSheet.create({
     bottom: 4,
     left: 4,
     borderRadius: 10,
-    backgroundColor: 'rgba(17,19,18,0.018)',
+    backgroundColor: 'rgba(17,19,18,0.022)',
     shadowColor: '#111312',
-    shadowOpacity: 0.14,
-    shadowRadius: 3,
-    shadowOffset: { width: 1, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
     elevation: 1,
   },
   rewardDigitField: {
@@ -1237,6 +1238,16 @@ const styles = StyleSheet.create({
     lineHeight: REWARD_DIGIT_HEIGHT,
     textAlign: 'center',
   },
+  rewardDigitHighlight: {
+    top: 2,
+    color: 'rgba(255,255,255,0.68)',
+  },
+  rewardDigitEngraved: {
+    color: 'rgba(17,19,18,0.84)',
+    textShadowColor: 'rgba(0,0,0,0.22)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 1,
+  },
   rewardCounterLabel: {
     ...typography.instrumentLabel,
     color: colors.muted,
@@ -1244,96 +1255,20 @@ const styles = StyleSheet.create({
     lineHeight: 11,
     letterSpacing: 0.8,
   },
-  buttonText: {
-    ...typography.button,
-    color: colors.ink,
-    fontSize: 16,
-  },
-  modalOverlay: {
-    flex: 1,
+  startButtonSurface: {
+    gap: 5,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(17, 19, 18, 0.42)',
-    padding: spacing.xl,
+    paddingLeft: 0,
+    paddingRight: 12,
   },
-  modalCard: {
-    width: '100%',
-    maxWidth: 380,
-    borderWidth: 0,
-    borderColor: colors.line,
-    borderRadius: radius.card,
-    backgroundColor: colors.panel,
-    padding: spacing.xl,
-    shadowColor: '#000000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
-  modalEyebrow: {
-    ...typography.panelLabel,
-    color: colors.sage,
-    textAlign: 'center',
-  },
-  modalTitle: {
-    fontFamily: typography.screenTitle.fontFamily,
-    marginTop: spacing.sm,
-    color: colors.ink,
-    fontSize: 24,
-    lineHeight: 30,
-    textAlign: 'center',
-  },
-  modalSummary: {
-    borderWidth: 0,
-    borderColor: colors.line,
-    borderRadius: radius.control,
-    backgroundColor: colors.surfaceInset,
-    marginTop: spacing.xl,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xs,
-  },
-  modalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomWidth: 0,
-    borderBottomColor: colors.line,
-    gap: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  modalLabel: {
-    ...typography.meta,
-    color: colors.muted,
-    fontSize: 13,
-  },
-  modalValue: {
-    fontFamily: typography.cardTitle.fontFamily,
-    flexShrink: 1,
-    color: colors.ink,
-    fontSize: 13,
-    textAlign: 'right',
-  },
-  modalReward: {
-    fontFamily: typography.cardTitle.fontFamily,
-    flexShrink: 1,
-    color: colors.sage,
-    fontSize: 13,
-    textAlign: 'right',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-  },
-  modalCancelText: {
+  buttonText: {
     ...typography.button,
-    color: colors.muted,
-    fontSize: 13,
-  },
-  modalStartText: {
-    ...typography.button,
-    color: colors.ink,
-    fontSize: 13,
+    color: colors.sage,
+    fontSize: 16,
+    textShadowColor: 'rgba(0,0,0,0.18)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 1,
   },
 });
 

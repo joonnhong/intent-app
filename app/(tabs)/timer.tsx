@@ -1,14 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Accelerometer } from 'expo-sensors';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, AppState, Platform, StyleSheet, Text, View } from 'react-native';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Animated, AppState, Easing, InteractionManager, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, Line, RadialGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, FeGaussianBlur, FeMerge, FeMergeNode, Filter, G, Path, Rect } from 'react-native-svg';
 
 import { CeramicButton } from '../../components/intent/CeramicButton';
+import { HardwareLed } from '../../components/intent/HardwareLed';
 import {
   applyPartialRewardAndFailure,
   applySuccess,
@@ -16,7 +18,7 @@ import {
   getSoundEffectsEnabled,
   recordSession,
 } from '../../services/storage';
-import { colors, radius, shadows, spacing, typography } from '../../constants/theme';
+import { colors, fonts, radius, spacing, typography } from '../../constants/theme';
 
 const ACTIVE_SESSION_KEY = 'intent.activeSession.v1';
 // Set to false before production release so sessions use the selected real duration.
@@ -32,101 +34,140 @@ const RESUMED_MESSAGE_MS = 2200;
 const SUCCESS_SOUND = require('../../assets/sounds/success.mp3');
 const WARNING_SOUND = require('../../assets/sounds/warning.mp3');
 const END_SOUND = require('../../assets/sounds/end.mp3');
-const TOTAL_PROGRESS_TICKS = 48;
-const PROGRESS_SEGMENTS = Array.from({ length: TOTAL_PROGRESS_TICKS }, (_, index) => index);
 
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const RESULT_RADIUS = 20;
+const RESULT_GAP_INSET = 4;
+const RESULT_GAP_RADIUS = RESULT_RADIUS - 2;
+const RESULT_INNER_INSET = 5;
+const RESULT_INNER_RADIUS = RESULT_RADIUS - 5;
 
-type LedTone = 'orange' | 'sage';
-
-type HardwareLedProps = {
-  isPulsing: boolean;
-  pulseOpacity: Animated.Value;
-  tone: LedTone;
-};
+const TOTAL_DOTS = 48;
 
 type HardwareProgressRingProps = {
-  activeTickCount: number;
-  tone: LedTone;
+  progress: number;
+  tone: 'sage' | 'orange';
+  isComplete: boolean;
 };
 
-const HardwareProgressRing = memo(function HardwareProgressRing({ activeTickCount, tone }: HardwareProgressRingProps) {
+const HardwareProgressRing = memo(function HardwareProgressRing({
+  progress,
+  tone,
+  isComplete,
+}: HardwareProgressRingProps) {
+  const size = 276;
+  const center = 138;
+  const dotRadius = 122;
+  const activeCount = isComplete ? TOTAL_DOTS : Math.round(Math.min(progress, 1) * TOTAL_DOTS);
   const activeColor = tone === 'sage' ? colors.sage : colors.orange;
-  const center = 124;
-  const innerRadius = 105;
-  const outerRadius = 111;
+
+  // Rotating pointer: triangle at the leading edge of progress
+  const pointerAngleDeg = -90 + Math.min(Math.max(progress, 0), 0.9999) * 360;
+  const pointerAngleRad = pointerAngleDeg * (Math.PI / 180);
+  const pCx = center + Math.cos(pointerAngleRad) * dotRadius;
+  const pCy = center + Math.sin(pointerAngleRad) * dotRadius;
 
   return (
     <View pointerEvents="none" style={styles.progressRing}>
-      <Svg width={248} height={248} viewBox="0 0 248 248">
-        {PROGRESS_SEGMENTS.map((tickIndex) => {
-          const angle = (-90 + (360 / TOTAL_PROGRESS_TICKS) * tickIndex) * (Math.PI / 180);
-          const x1 = center + Math.cos(angle) * innerRadius;
-          const y1 = center + Math.sin(angle) * innerRadius;
-          const x2 = center + Math.cos(angle) * outerRadius;
-          const y2 = center + Math.sin(angle) * outerRadius;
-          const isActiveTick = tickIndex < activeTickCount;
-
-          return (
-            <Line
-              key={tickIndex}
-              x1={x1}
-              y1={y1}
-              x2={x2}
-              y2={y2}
-              stroke={isActiveTick ? activeColor : colors.faint}
-              strokeOpacity={isActiveTick ? 0.54 : 0.07}
-              strokeWidth={isActiveTick ? 1.35 : 1}
-              strokeLinecap="round"
-            />
-          );
-        })}
-      </Svg>
-    </View>
-  );
-});
-const HardwareLed = memo(function HardwareLed({ isPulsing, pulseOpacity, tone }: HardwareLedProps) {
-  const toneColor = tone === 'sage' ? colors.sage : colors.orange;
-  const animatedOpacity = pulseOpacity as unknown as number;
-  const glowOpacity = isPulsing ? animatedOpacity : 1;
-
-  return (
-    <View pointerEvents="none" style={styles.ledLight}>
-      <Svg width={44} height={44} viewBox="0 0 44 44">
+      <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         <Defs>
-          <RadialGradient id="ledSurfaceTint" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%" stopColor={toneColor} stopOpacity="0.12" />
-            <Stop offset="48%" stopColor={toneColor} stopOpacity="0.045" />
-            <Stop offset="100%" stopColor={toneColor} stopOpacity="0" />
-          </RadialGradient>
-          <RadialGradient id="ledOuterGlow" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%" stopColor={toneColor} stopOpacity="0.32" />
-            <Stop offset="34%" stopColor={toneColor} stopOpacity="0.12" />
-            <Stop offset="100%" stopColor={toneColor} stopOpacity="0" />
-          </RadialGradient>
-          <RadialGradient id="ledMidGlow" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%" stopColor={toneColor} stopOpacity="0.34" />
-            <Stop offset="58%" stopColor={toneColor} stopOpacity="0.13" />
-            <Stop offset="100%" stopColor={toneColor} stopOpacity="0" />
-          </RadialGradient>
-          <RadialGradient id="ledInnerGlow" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%" stopColor={toneColor} stopOpacity="0.42" />
-            <Stop offset="70%" stopColor={toneColor} stopOpacity="0.2" />
-            <Stop offset="100%" stopColor={toneColor} stopOpacity="0" />
-          </RadialGradient>
-          <RadialGradient id="ledCore" cx="36%" cy="34%" r="68%">
-            <Stop offset="0%" stopColor="#F0EEE9" stopOpacity="0.95" />
-            <Stop offset="24%" stopColor={toneColor} stopOpacity="1" />
-            <Stop offset="100%" stopColor={toneColor} stopOpacity="0.96" />
-          </RadialGradient>
+          <Filter id="dotGlow" x="-200%" y="-200%" width="500%" height="500%">
+            <FeGaussianBlur in="SourceGraphic" stdDeviation="1.8" result="blur" />
+            <FeMerge>
+              <FeMergeNode in="blur" />
+              <FeMergeNode in="SourceGraphic" />
+            </FeMerge>
+          </Filter>
+          <Filter id="dotGlowStrong" x="-250%" y="-250%" width="600%" height="600%">
+            <FeGaussianBlur in="SourceGraphic" stdDeviation="3.2" result="blur" />
+            <FeMerge>
+              <FeMergeNode in="blur" />
+              <FeMergeNode in="SourceGraphic" />
+            </FeMerge>
+          </Filter>
         </Defs>
 
-        <Circle cx="22" cy="22" r="20" fill="url(#ledSurfaceTint)" />
-        <AnimatedCircle cx="22" cy="22" r="21" fill="url(#ledOuterGlow)" opacity={glowOpacity} />
-        <AnimatedCircle cx="22" cy="22" r="14" fill="url(#ledMidGlow)" opacity={glowOpacity} />
-        <Circle cx="22" cy="22" r="8" fill="url(#ledInnerGlow)" />
-        <Circle cx="22" cy="22" r="3" fill="url(#ledCore)" />
-        <Circle cx="20.9" cy="20.7" r="0.75" fill="#F0EEE9" opacity="0.86" />
+        {Array.from({ length: TOTAL_DOTS }, (_, i) => {
+          const angleDeg = -90 + (360 / TOTAL_DOTS) * i;
+          const angleRad = angleDeg * (Math.PI / 180);
+          const cx = center + Math.cos(angleRad) * dotRadius;
+          const cy = center + Math.sin(angleRad) * dotRadius;
+          const isActive = i < activeCount;
+
+          const midAngleDeg = -90 + (360 / TOTAL_DOTS) * (i + 0.5);
+          const midRad = midAngleDeg * (Math.PI / 180);
+          const gapCx = center + Math.cos(midRad) * dotRadius;
+          const gapCy = center + Math.sin(midRad) * dotRadius;
+
+          return (
+            <G key={i}>
+              <G transform={`rotate(${midAngleDeg + 90}, ${gapCx}, ${gapCy})`}>
+                <Rect
+                  x={gapCx - 0.75} y={gapCy - 2.5}
+                  width={1.5} height={5}
+                  rx={0.75}
+                  fill="#FFFFFF"
+                  fillOpacity={0.10}
+                  stroke="none"
+                />
+              </G>
+              {isActive ? (
+                <G transform={`rotate(${angleDeg + 90}, ${cx}, ${cy})`} filter={`url(#${isComplete ? 'dotGlowStrong' : 'dotGlow'})`}>
+                  <Rect
+                    x={cx - 2.0} y={cy - 7}
+                    width={4.0} height={14}
+                    rx={2.0}
+                    fill={activeColor}
+                    fillOpacity={isComplete ? 1 : 0.94}
+                    stroke="none"
+                  />
+                </G>
+              ) : (
+                <G transform={`rotate(${angleDeg + 90}, ${cx}, ${cy})`}>
+                  {/* Recessed groove base — warm gray precision engraving */}
+                  <Rect
+                    x={cx - 1.6} y={cy - 5.5}
+                    width={3.2} height={11}
+                    rx={1.6}
+                    fill="#C8C5BE"
+                    fillOpacity={0.48}
+                    stroke="none"
+                  />
+                  {/* Top-edge specular — light catching the groove rim */}
+                  <Rect
+                    x={cx - 1.0} y={cy - 5.5}
+                    width={2.0} height={4}
+                    rx={1.0}
+                    fill="#FFFFFF"
+                    fillOpacity={0.70}
+                    stroke="none"
+                  />
+                </G>
+              )}
+            </G>
+          );
+        })}
+
+        {/* Rotating progress pointer — physical triangular marker with depth */}
+        {!isComplete && (
+          <>
+            {/* Offset shadow gives the marker a raised/physical feel */}
+            <G transform={`rotate(${pointerAngleDeg + 90}, ${pCx}, ${pCy})`}>
+              <Path
+                d={`M ${pCx},${pCy - 11} L ${pCx - 5},${pCy + 9} L ${pCx + 5},${pCy + 9} Z`}
+                fill="rgba(0,0,0,0.28)"
+                stroke="none"
+              />
+            </G>
+            <G transform={`rotate(${pointerAngleDeg + 90}, ${pCx}, ${pCy})`} filter="url(#dotGlowStrong)">
+              <Path
+                d={`M ${pCx},${pCy - 12} L ${pCx - 5.5},${pCy + 8} L ${pCx + 5.5},${pCy + 8} Z`}
+                fill={activeColor}
+                fillOpacity={0.97}
+                stroke="none"
+              />
+            </G>
+          </>
+        )}
       </Svg>
     </View>
   );
@@ -377,6 +418,34 @@ export default function TimerScreen() {
   const sessionPurposeRef = useRef(sessionPurpose);
   const sessionNoteRef = useRef(sessionNote);
   const indicatorPulseOpacity = useRef(new Animated.Value(1)).current;
+  const resultOpacity = useRef(new Animated.Value(0)).current;
+  const statusOpacity = useRef(new Animated.Value(1)).current;
+  const successTintOpacity = useRef(new Animated.Value(0)).current;
+  const endedTintOpacity = useRef(new Animated.Value(0)).current;
+
+  // Track the session ID seen on the previous render. When it changes the
+  // component is being reused (tab cache) for a new session, so we reset all
+  // result/end-state before the first paint of the new session.
+  const prevSessionIdRef = useRef(routeSessionId);
+  useLayoutEffect(() => {
+    if (prevSessionIdRef.current === routeSessionId) return;
+    prevSessionIdRef.current = routeSessionId;
+    hasStoredResultRef.current = false;
+    statusRef.current = 'loading';
+    setStatus('loading');
+    setIsWarning(false);
+    setShowPenaltyMessage(false);
+    setShowResumedMessage(false);
+    setPenaltyCount(0);
+    setPartialPoints(0);
+    setCompletedSeconds(0);
+    setEndReason('manual');
+    setRemainingSeconds(paramCountdownDurationSeconds);
+    resultOpacity.setValue(0);
+    statusOpacity.setValue(1);
+    successTintOpacity.setValue(0);
+    endedTintOpacity.setValue(0);
+  }, [routeSessionId, paramCountdownDurationSeconds, resultOpacity, statusOpacity, successTintOpacity, endedTintOpacity]);
 
   const syncActiveSessionState = useCallback((session: ActiveSession) => {
     startTimeRef.current = session.startTime;
@@ -546,14 +615,17 @@ export default function TimerScreen() {
   useEffect(() => {
     let isMounted = true;
 
-    getSoundEffectsEnabled().then((isEnabled) => {
-      if (isMounted) {
-        soundEffectsEnabledRef.current = isEnabled;
-      }
+    const interactionHandle = InteractionManager.runAfterInteractions(() => {
+      getSoundEffectsEnabled().then((isEnabled) => {
+        if (isMounted) {
+          soundEffectsEnabledRef.current = isEnabled;
+        }
+      });
     });
 
     return () => {
       isMounted = false;
+      interactionHandle.cancel();
     };
   }, []);
 
@@ -673,36 +745,43 @@ export default function TimerScreen() {
     let isSubscribed = true;
     let subscription: { remove: () => void } | null = null;
 
-    Accelerometer.isAvailableAsync()
-      .then((isAvailable) => {
-        if (!isSubscribed || !isAvailable) {
-          setIsStill(true);
-          return;
-        }
+    // Defer sensor binding until the navigation transition finishes so the
+    // animation frame budget is not shared with accelerometer setup overhead.
+    const interactionHandle = InteractionManager.runAfterInteractions(() => {
+      if (!isSubscribed) return;
 
-        Accelerometer.setUpdateInterval(SENSOR_INTERVAL_MS);
-        subscription = Accelerometer.addListener((reading) => {
-          if (!lastReading) {
-            lastReading = reading;
+      Accelerometer.isAvailableAsync()
+        .then((isAvailable) => {
+          if (!isSubscribed || !isAvailable) {
             setIsStill(true);
             return;
           }
 
-          const movementDelta =
-            Math.abs(reading.x - lastReading.x) +
-            Math.abs(reading.y - lastReading.y) +
-            Math.abs(reading.z - lastReading.z);
+          Accelerometer.setUpdateInterval(SENSOR_INTERVAL_MS);
+          subscription = Accelerometer.addListener((reading) => {
+            if (!lastReading) {
+              lastReading = reading;
+              setIsStill(true);
+              return;
+            }
 
-          setIsStill(movementDelta < STILL_THRESHOLD);
-          lastReading = reading;
+            const movementDelta =
+              Math.abs(reading.x - lastReading.x) +
+              Math.abs(reading.y - lastReading.y) +
+              Math.abs(reading.z - lastReading.z);
+
+            setIsStill(movementDelta < STILL_THRESHOLD);
+            lastReading = reading;
+          });
+        })
+        .catch(() => {
+          setIsStill(true);
         });
-      })
-      .catch(() => {
-        setIsStill(true);
-      });
+    });
 
     return () => {
       isSubscribed = false;
+      interactionHandle.cancel();
       subscription?.remove();
     };
   }, [status]);
@@ -818,6 +897,43 @@ export default function TimerScreen() {
     };
   }, [endSessionWithPartialReward, isStill, routeSessionId, status]);
 
+  // Cross-fade between running status and result panel — no layout shift.
+  useEffect(() => {
+    const showResult = status === 'success' || status === 'ended';
+    Animated.parallel([
+      Animated.timing(resultOpacity, {
+        toValue: showResult ? 1 : 0,
+        duration: 340,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(statusOpacity, {
+        toValue: showResult ? 0 : 1,
+        duration: showResult ? 180 : 340,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [status, resultOpacity, statusOpacity]);
+
+  useEffect(() => {
+    Animated.timing(successTintOpacity, {
+      toValue: status === 'success' ? 1 : 0,
+      duration: 440,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [status, successTintOpacity]);
+
+  useEffect(() => {
+    Animated.timing(endedTintOpacity, {
+      toValue: status === 'ended' ? 1 : 0,
+      duration: 440,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [status, endedTintOpacity]);
+
   const isSuccess = status === 'success';
   const isEnded = status === 'ended';
   const isLoading = status === 'loading';
@@ -833,9 +949,9 @@ export default function TimerScreen() {
     : isSuccess
     ? 'Session complete'
     : isEnded && endReason === 'penalties'
-    ? 'Session ended after too many penalties'
+    ? 'Session penalized'
     : isEnded
-    ? 'Session ended'
+    ? 'Session quit'
     : trackingMessage;
   const resultButtonLabel = isSuccess ? 'Back home' : 'Done';
   const completedDurationLabel = formatCompletedDuration(completedSeconds);
@@ -853,15 +969,12 @@ export default function TimerScreen() {
     ? selectedDurationSeconds * countdownProgress
     : Math.max(0, sessionDurationSeconds - remainingSeconds);
   const progress = Math.min(1, Math.max(0, uiCompletedSeconds / selectedDurationSeconds));
-  const activeTickCount = isSuccess
-    ? TOTAL_PROGRESS_TICKS
-    : Math.floor(progress * TOTAL_PROGRESS_TICKS);
 
   const resultTitle = isSuccess
     ? 'Session complete'
     : isEnded && endReason === 'penalties'
-    ? 'Too many penalties'
-    : 'Session ended';
+    ? 'Penalized'
+    : 'Quit';
   const resultPoints = isSuccess ? sessionRewardPoints : partialPoints;
 
   const handleFailedPress = () => {
@@ -874,58 +987,233 @@ export default function TimerScreen() {
   };
 
   return (
-    <SafeAreaView
-      style={[
-        styles.safeArea,
-        isSuccess && styles.successBackground,
-        isEnded && styles.endedBackground,
-      ]}>
+    <SafeAreaView style={styles.safeArea}>
+      {/* Animated background tints — fade in/out independently, no layout impact */}
+      <Animated.View pointerEvents="none" style={[styles.bgTintSuccess, { opacity: successTintOpacity }]} />
+      <Animated.View pointerEvents="none" style={[styles.bgTintEnded, { opacity: endedTintOpacity }]} />
       <View style={styles.container}>
         <View style={styles.devicePanel}>
+
           <View style={styles.panelHeader}>
             <Text style={styles.panelLabel}>INTENT FOCUS</Text>
             {status === 'running' ? (
-              <View style={styles.penaltyPill}>
-                <Text style={styles.penaltyPillText}>PENALTY {penaltyCount}</Text>
-              </View>
+              <LinearGradient
+                colors={['#DEDAD0', '#F4F1EA']}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={styles.penaltyPillSeat}>
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(52,47,39,0.20)', 'rgba(52,47,39,0.07)', 'rgba(52,47,39,0)']}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={styles.penaltyPillContactGap}
+                />
+                <View style={styles.penaltyPillField}>
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(17,19,18,0.07)', 'rgba(17,19,18,0)']}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={styles.penaltyPillTopShade}
+                  />
+                  <Text style={styles.penaltyPillText}>PENALTY {penaltyCount}</Text>
+                </View>
+              </LinearGradient>
             ) : null}
           </View>
 
           <View style={styles.timerWrap}>
             <View style={styles.dialStage}>
-              <View style={styles.dialOuter}>
+              <View style={styles.dialHousingWrapper}>
+                <View pointerEvents="none" style={styles.dialHousingShadow} />
+              <LinearGradient
+                colors={['#F8F6F0', '#DEDAD0', '#EAE7DF']}
+                locations={[0, 0.55, 1]}
+                start={{ x: 0.25, y: 0 }}
+                end={{ x: 0.75, y: 1 }}
+                style={styles.dialOuter}>
+                {/* 4-sided contact gap — stronger top, graduated sides and bottom */}
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(52,47,39,0.28)', 'rgba(52,47,39,0.13)', 'rgba(52,47,39,0)']}
+                  locations={[0, 0.45, 1]}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={styles.dialContactGapTop}
+                />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(52,47,39,0.14)', 'rgba(52,47,39,0.05)', 'rgba(52,47,39,0)']}
+                  start={{ x: 0.5, y: 1 }}
+                  end={{ x: 0.5, y: 0 }}
+                  style={styles.dialContactGapBottom}
+                />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(52,47,39,0.14)', 'rgba(52,47,39,0.04)', 'rgba(52,47,39,0)']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={styles.dialContactGapLeft}
+                />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(52,47,39,0.14)', 'rgba(52,47,39,0.04)', 'rgba(52,47,39,0)']}
+                  start={{ x: 1, y: 0.5 }}
+                  end={{ x: 0, y: 0.5 }}
+                  style={styles.dialContactGapRight}
+                />
+                <Animated.View pointerEvents="none" style={[styles.ringGlowSuccess, { opacity: successTintOpacity }]} />
+                <Animated.View pointerEvents="none" style={[styles.ringGlowEnded, { opacity: endedTintOpacity }]} />
                 <View style={styles.dialGroove}>
                   <HardwareProgressRing
-                    activeTickCount={activeTickCount}
-                    tone={isEnded ? 'orange' : 'sage'}
+                    progress={progress}
+                    tone={isWarning || isEnded ? 'orange' : 'sage'}
+                    isComplete={isSuccess}
                   />
-
-                  <View style={styles.dialCenter}>
-                    <View pointerEvents="none" style={styles.dialSurfaceTopLight} />
-                    <View pointerEvents="none" style={styles.dialSurfaceInnerRim} />
-                    <HardwareLed
-                      isPulsing={status === 'running'}
-                      pulseOpacity={indicatorPulseOpacity}
-                      tone={isSuccess ? 'sage' : 'orange'}
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(0,0,0,0.22)', 'rgba(0,0,0,0.08)', 'rgba(0,0,0,0)']}
+                    locations={[0, 0.42, 1]}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={styles.dialGrooveTopShade}
+                  />
+                  {/* Specular highlight — machined channel catches light at top */}
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0)']}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={styles.dialGrooveTopHighlight}
+                  />
+                  {/* Lateral groove shading — precision-machined channel feel */}
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(0,0,0,0.14)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.14)']}
+                    locations={[0, 0.18, 0.82, 1]}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={styles.dialGrooveSideShade}
+                  />
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.12)']}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={styles.dialGrooveBottomShade}
+                  />
+                  <Animated.View pointerEvents="none" style={[styles.ringColorSuccess, { opacity: successTintOpacity }]} />
+                  <Animated.View pointerEvents="none" style={[styles.ringColorEnded, { opacity: endedTintOpacity }]} />
+                  {/* Constant sage illumination during normal running — dial feels lit from within */}
+                  {status === 'running' && !isWarning && (
+                    <View pointerEvents="none" style={styles.ringColorRunning} />
+                  )}
+                  {/* Inner rim ring — bright edge where raised center face meets the recessed channel */}
+                  <View pointerEvents="none" style={styles.dialCenterRimRing} />
+                  <LinearGradient
+                    colors={['#FFFFFF', '#DEDAD2']}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={styles.dialCenter}>
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(255,255,255,0.52)', 'rgba(255,255,255,0.18)', 'rgba(255,255,255,0)']}
+                      locations={[0, 0.30, 0.65]}
+                      start={{ x: 0.18, y: 0 }}
+                      end={{ x: 0.82, y: 0.70 }}
+                      style={styles.dialSurfaceTopLight}
                     />
-                    <Text
-                      style={[
-                        styles.timerText,
-                        isSuccess && styles.successText,
-                        isEnded && styles.endedText,
-                      ]}>
-                      {formatTime(remainingSeconds)}
-                    </Text>
-                    <Text style={[styles.dialSubLabel, isSuccess && styles.successText, isEnded && styles.endedText]}>
-                      {isLoading ? 'RESTORE' : isEnded ? 'ENDED' : isSuccess ? 'DONE' : 'ACTIVE'}
-                    </Text>
-                  </View>
+                    {/* Top-left directional highlight — raised ceramic disk catches ambient light */}
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(255,255,255,0.45)', 'rgba(255,255,255,0.12)', 'rgba(255,255,255,0)']}
+                      locations={[0, 0.28, 0.65]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.dialCenterBevelLight}
+                    />
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(17,19,18,0.06)', 'rgba(17,19,18,0)', 'rgba(17,19,18,0)', 'rgba(17,19,18,0.06)']}
+                      locations={[0, 0.22, 0.78, 1]}
+                      start={{ x: 0, y: 0.5 }}
+                      end={{ x: 1, y: 0.5 }}
+                      style={styles.dialCenterSideVignette}
+                    />
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(17,19,18,0)', 'rgba(17,19,18,0.05)']}
+                      start={{ x: 0.5, y: 0 }}
+                      end={{ x: 0.5, y: 1 }}
+                      style={styles.dialCenterBottomVignette}
+                    />
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.42)', 'rgba(255,255,255,0.42)', 'rgba(255,255,255,0)']}
+                      locations={[0, 0.2, 0.8, 1]}
+                      start={{ x: 0, y: 0.5 }}
+                      end={{ x: 1, y: 0.5 }}
+                      style={styles.dialCenterBottomGlint}
+                    />
+                    {/* Bottom-right contact shadow — opposite of top-left highlight completes bevel illusion */}
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.06)', 'rgba(0,0,0,0.13)']}
+                      locations={[0, 0.55, 1]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.dialCenterBevelShadow}
+                    />
+                    {/* Inner flat display surface — centered within the gradient bevel ring */}
+                    <View style={styles.dialCenterField}>
+                      <LinearGradient
+                        pointerEvents="none"
+                        colors={['rgba(17,19,18,0.07)', 'rgba(17,19,18,0)']}
+                        start={{ x: 0.5, y: 0 }}
+                        end={{ x: 0.5, y: 1 }}
+                        style={styles.dialCenterFieldTopShade}
+                      />
+                      {/* Digit slot backing — four recessed windows behind the time digits */}
+                      <View pointerEvents="none" style={styles.digitSlots}>
+                        <View style={styles.digitSlot} />
+                        <View style={styles.digitSlot} />
+                        <View style={styles.digitSlotColon} />
+                        <View style={styles.digitSlot} />
+                        <View style={styles.digitSlot} />
+                      </View>
+                      <View pointerEvents="none" style={styles.ledLight}>
+                        <HardwareLed
+                          size="small"
+                          isOn
+                          tone={isSuccess ? 'sage' : isWarning ? 'orange' : 'sage'}
+                          pulseOpacity={status === 'running' ? indicatorPulseOpacity : undefined}
+                        />
+                      </View>
+                      <Text
+                        style={[
+                          styles.timerText,
+                          isSuccess && styles.successText,
+                          isEnded && styles.endedText,
+                          isWarning && styles.warningText,
+                        ]}>
+                        {formatTime(remainingSeconds)}
+                      </Text>
+                      <Text style={[styles.dialSubLabel, isSuccess && styles.successText, isEnded && styles.endedText, isWarning && styles.warningText]}>
+                        {isLoading ? 'RESTORE' : isEnded ? 'ENDED' : isSuccess ? 'DONE' : 'ACTIVE'}
+                      </Text>
+                    </View>
+                  </LinearGradient>
                 </View>
+              </LinearGradient>
               </View>
             </View>
 
+            {/* Fixed-height status zone — dial position never shifts between states */}
             <View style={styles.statusArea}>
-              {!isSuccess && !isEnded ? (
+              <Animated.View
+                style={[styles.statusLayer, { opacity: statusOpacity }]}
+                pointerEvents={isSuccess || isEnded ? 'none' : 'box-none'}>
                 <Text
                   style={[
                     styles.statusLabel,
@@ -935,17 +1223,49 @@ export default function TimerScreen() {
                   ]}>
                   {message}
                 </Text>
-              ) : (
-                <View style={styles.resultStrip}>
-                  <Text style={[styles.resultTitle, isSuccess && styles.successText, isEnded && styles.endedText]}>
-                    {resultTitle}
-                  </Text>
-                  <Text style={[styles.resultValue, isSuccess && styles.successText, isEnded && styles.endedText]}>
-                    +{resultPoints} pts
-                  </Text>
-                  {isEnded ? <Text style={styles.resultMeta}>Completed {completedDurationLabel}</Text> : null}
-                </View>
-              )}
+                {sessionPurpose && status === 'running' && !isWarning && !showPenaltyMessage ? (
+                  <Text style={styles.purposeTag}>#{sessionPurpose}</Text>
+                ) : null}
+              </Animated.View>
+
+              <Animated.View
+                style={[styles.resultLayer, { opacity: resultOpacity }]}
+                pointerEvents={isSuccess || isEnded ? 'auto' : 'none'}>
+                <LinearGradient
+                  colors={['#DEDAD0', '#E3E0D7', '#ECEAE2', '#F4F2EB', '#FDFAF5']}
+                  locations={[0, 0.22, 0.48, 0.76, 1]}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={styles.resultSeat}>
+                  <LinearGradient pointerEvents="none" colors={['rgba(52,47,39,0.18)', 'rgba(52,47,39,0.08)', 'rgba(52,47,39,0.02)', 'rgba(52,47,39,0)']} locations={[0, 0.3, 0.7, 1]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.resultGapTop} />
+                  <LinearGradient pointerEvents="none" colors={['rgba(52,47,39,0.10)', 'rgba(52,47,39,0.04)', 'rgba(52,47,39,0)']} locations={[0, 0.5, 1]} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.resultGapBottom} />
+                  <LinearGradient pointerEvents="none" colors={['rgba(52,47,39,0.10)', 'rgba(52,47,39,0.03)', 'rgba(52,47,39,0)']} locations={[0, 0.5, 1]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.resultGapLeft} />
+                  <LinearGradient pointerEvents="none" colors={['rgba(52,47,39,0.10)', 'rgba(52,47,39,0.03)', 'rgba(52,47,39,0)']} locations={[0, 0.5, 1]} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.resultGapRight} />
+                  <View pointerEvents="none" style={styles.resultCavityShadow} />
+                  <View style={styles.resultField}>
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(17,19,18,0.09)', 'rgba(17,19,18,0.028)', 'rgba(17,19,18,0)']}
+                      locations={[0, 0.4, 1]}
+                      start={{ x: 0.5, y: 0 }}
+                      end={{ x: 0.5, y: 1 }}
+                      style={styles.resultTopShade}
+                    />
+                    <View style={styles.resultContent}>
+                      <View style={styles.resultStatusRow}>
+                        <HardwareLed size="small" isOn tone={isSuccess ? 'sage' : 'orange'} />
+                        <Text style={[styles.resultTitle, isSuccess && styles.successText, isEnded && styles.endedText]}>
+                          {resultTitle.toUpperCase()}
+                        </Text>
+                      </View>
+                      <Text style={[styles.resultValue, isSuccess && styles.successText, isEnded && styles.endedText]}>
+                        +{resultPoints} pts
+                      </Text>
+                      {isEnded ? <Text style={styles.resultMeta}>Completed {completedDurationLabel}</Text> : null}
+                    </View>
+                  </View>
+                </LinearGradient>
+              </Animated.View>
             </View>
           </View>
 
@@ -980,10 +1300,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  successBackground: {
+  bgTintSuccess: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.successSoft,
   },
-  endedBackground: {
+  bgTintEnded: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.warningSoft,
   },
   container: {
@@ -996,12 +1318,7 @@ const styles = StyleSheet.create({
   devicePanel: {
     flex: 1,
     maxHeight: 590,
-
-    borderRadius: radius.panel,
-    backgroundColor: colors.panel,
-    padding: spacing.panelPadding,
     justifyContent: 'space-between',
-    ...shadows.panel,
   },
   panelHeader: {
     minHeight: 38,
@@ -1012,6 +1329,40 @@ const styles = StyleSheet.create({
   panelLabel: {
     ...typography.panelLabel,
     color: colors.ink,
+    textShadowColor: 'rgba(0,0,0,0.18)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
+  },
+  penaltyPillSeat: {
+    borderRadius: 14,
+    padding: 3,
+    position: 'relative',
+  },
+  penaltyPillContactGap: {
+    position: 'absolute',
+    top: 3, right: 3, bottom: 3, left: 3,
+    borderRadius: 12,
+  },
+  penaltyPillField: {
+    overflow: 'hidden',
+    borderRadius: 10,
+    backgroundColor: '#E4E0D8',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    position: 'relative',
+    zIndex: 1,
+  },
+  penaltyPillTopShade: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    height: 14,
+  },
+  penaltyPillText: {
+    ...typography.instrumentLabel,
+    color: colors.muted,
+    textShadowColor: 'rgba(0,0,0,0.16)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
   },
   timerWrap: {
     alignItems: 'center',
@@ -1019,122 +1370,189 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
   },
   dialStage: {
-    height: 292,
+    height: 330,
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  dialHousingWrapper: {
+    width: 316,
+    height: 316,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dialHousingShadow: {
+    position: 'absolute',
+    width: 316,
+    height: 316,
+    borderRadius: 158,
+    backgroundColor: '#E8E5DE',
+    shadowColor: '#111312',
+    shadowOpacity: 0.45,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 12,
+  },
   dialOuter: {
+    width: 316,
+    height: 316,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 158,
+    overflow: 'hidden',
+  },
+  dialContactGapTop: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    height: 60,
+    borderTopLeftRadius: 158,
+    borderTopRightRadius: 158,
+  },
+  dialContactGapBottom: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    height: 48,
+    borderBottomLeftRadius: 158,
+    borderBottomRightRadius: 158,
+  },
+  dialContactGapLeft: {
+    position: 'absolute',
+    left: 0, top: 0, bottom: 0,
+    width: 48,
+    borderTopLeftRadius: 158,
+    borderBottomLeftRadius: 158,
+  },
+  dialContactGapRight: {
+    position: 'absolute',
+    right: 0, top: 0, bottom: 0,
+    width: 48,
+    borderTopRightRadius: 158,
+    borderBottomRightRadius: 158,
+  },
+  progressRing: {
+    position: 'absolute',
     width: 276,
     height: 276,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.dial,
-    backgroundColor: colors.surfaceInset,
-    borderWidth: 0,
-    ...shadows.dial,
-  },
-  progressRing: {
-    position: 'absolute',
-    width: 248,
-    height: 248,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   dialGroove: {
-    width: 248,
-    height: 248,
+    width: 276,
+    height: 276,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.dial,
-    backgroundColor: colors.surfaceInset,
-    borderWidth: 0,
-    shadowColor: '#000000',
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: -2 },
-    elevation: 1,
+    borderRadius: 138,
+    backgroundColor: '#2E2C2A',
+    overflow: 'hidden',
+  },
+  dialGrooveTopShade: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 72,
+  },
+  dialGrooveTopHighlight: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 60,
+  },
+  dialGrooveSideShade: {
+    position: 'absolute',
+    top: 0, bottom: 0, left: 0, right: 0,
+  },
+  dialGrooveBottomShade: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    height: 56,
   },
   dialCenter: {
-    width: 204,
-    height: 204,
+    width: 210,
+    height: 210,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.dial,
-    backgroundColor: colors.surface,
-    borderWidth: 0,
-
     overflow: 'hidden',
-    shadowColor: '#000000',
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
   },
   dialSurfaceTopLight: {
     position: 'absolute',
-    top: 10,
-    left: 26,
-    width: 88,
-    height: 54,
-    borderRadius: 44,
-    backgroundColor: 'rgba(255,255,255,0.32)',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 112,
   },
-  dialSurfaceInnerRim: {
+  dialCenterBevelLight: {
     position: 'absolute',
-    top: 6,
-    left: 6,
-    right: 6,
-    bottom: 6,
-    borderRadius: radius.dial,
-    borderWidth: 0,
-
+    top: 0, left: 0, right: 0, bottom: 0,
+  },
+  dialCenterBevelShadow: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+  },
+  // Thin bright ring just outside dialCenter — accent at center/channel boundary
+  dialCenterRimRing: {
+    position: 'absolute',
+    width: 218,
+    height: 218,
+    borderRadius: 109,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  dialCenterSideVignette: {
+    position: 'absolute',
+    top: 0, bottom: 0, left: 0, right: 0,
+  },
+  dialCenterBottomVignette: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    height: 60,
+  },
+  dialCenterBottomGlint: {
+    position: 'absolute',
+    bottom: 2,
+    left: 0,
+    right: 0,
+    height: 1,
   },
   ledLight: {
     position: 'absolute',
     top: 16,
-    width: 44,
-    height: 44,
+    width: 20,
+    height: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
   timerText: {
-    ...typography.timerValue,
+    fontFamily: fonts.monoBold,
+    fontSize: 42,
+    lineHeight: 50,
+    letterSpacing: 1.5,
     color: colors.ink,
-    fontSize: 46,
-    letterSpacing: 0.1,
+    marginTop: 8,
   },
   dialSubLabel: {
     ...typography.panelLabel,
     color: colors.faint,
     opacity: 0.42,
     marginTop: spacing.xs,
-  },
-  penaltyPill: {
-    borderWidth: 0,
-    borderTopColor: 'rgba(255,255,255,0.78)',
-    borderLeftColor: colors.line,
-    borderRightColor: colors.line,
-    borderBottomColor: 'rgba(17,19,18,0.16)',
-    borderRadius: radius.smallButton,
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    shadowColor: '#000000',
-    shadowOpacity: 0.13,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
-  penaltyPillText: {
-    ...typography.instrumentLabel,
-    color: colors.muted,
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
   },
   statusArea: {
-    height: 88,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
+    height: 116,
     width: '100%',
+    position: 'relative',
+  },
+  statusLayer: {
+    position: 'absolute',
+    top: spacing.xs,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    gap: 5,
   },
   statusLabel: {
     ...typography.panelLabel,
@@ -1143,35 +1561,116 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     textAlign: 'center',
     lineHeight: 18,
+    textShadowColor: 'rgba(0,0,0,0.16)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
   },
-  resultStrip: {
-    minWidth: 220,
-    minHeight: 72,
+  purposeTag: {
+    ...typography.chip,
+    color: colors.sage,
+    fontSize: 12,
+  },
+  resultLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+  },
+  resultSeat: {
+    width: '100%',
+    borderRadius: RESULT_RADIUS,
+    padding: RESULT_INNER_INSET,
+    position: 'relative',
+  },
+  resultGapTop: {
+    position: 'absolute',
+    top: RESULT_GAP_INSET, left: RESULT_GAP_INSET, right: RESULT_GAP_INSET,
+    height: 18,
+    borderTopLeftRadius: RESULT_GAP_RADIUS,
+    borderTopRightRadius: RESULT_GAP_RADIUS,
+  },
+  resultGapBottom: {
+    position: 'absolute',
+    bottom: RESULT_GAP_INSET, left: RESULT_GAP_INSET, right: RESULT_GAP_INSET,
+    height: 14,
+    borderBottomLeftRadius: RESULT_GAP_RADIUS,
+    borderBottomRightRadius: RESULT_GAP_RADIUS,
+  },
+  resultGapLeft: {
+    position: 'absolute',
+    left: RESULT_GAP_INSET, top: RESULT_GAP_INSET, bottom: RESULT_GAP_INSET,
+    width: 14,
+    borderTopLeftRadius: RESULT_GAP_RADIUS,
+    borderBottomLeftRadius: RESULT_GAP_RADIUS,
+  },
+  resultGapRight: {
+    position: 'absolute',
+    right: RESULT_GAP_INSET, top: RESULT_GAP_INSET, bottom: RESULT_GAP_INSET,
+    width: 14,
+    borderTopRightRadius: RESULT_GAP_RADIUS,
+    borderBottomRightRadius: RESULT_GAP_RADIUS,
+  },
+  resultCavityShadow: {
+    position: 'absolute',
+    top: RESULT_GAP_INSET + 1,
+    right: RESULT_GAP_INSET + 1,
+    bottom: RESULT_GAP_INSET + 1,
+    left: RESULT_GAP_INSET + 1,
+    borderRadius: RESULT_GAP_RADIUS - 1,
+    backgroundColor: 'rgba(17,19,18,0.018)',
+    shadowColor: '#111312',
+    shadowOpacity: 0.26,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 1,
+  },
+  resultField: {
+    overflow: 'hidden',
+    borderRadius: RESULT_INNER_RADIUS,
+    backgroundColor: '#E4E0D8',
+    paddingHorizontal: 14,
+    position: 'relative',
+    zIndex: 1,
+  },
+  resultTopShade: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    height: 22,
+  },
+  resultContent: {
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 0,
-    borderColor: 'transparent',
-    borderRadius: radius.control,
-    backgroundColor: 'transparent',
-    marginTop: 0,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.xs,
+    paddingVertical: 14,
+    gap: 3,
+  },
+  resultStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   resultTitle: {
     ...typography.instrumentLabel,
     color: colors.ink,
     fontSize: 13,
+    textShadowColor: 'rgba(0,0,0,0.18)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
   },
   resultValue: {
     fontFamily: typography.valueLarge.fontFamily,
-    color: colors.ink,
+    color: 'rgba(17,19,18,0.62)',
     fontSize: 22,
     marginTop: spacing.xs,
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 1,
   },
   resultMeta: {
     ...typography.meta,
     color: colors.muted,
     marginTop: spacing.xs,
+    textShadowColor: 'rgba(0,0,0,0.16)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
   },
   actionArea: {
     height: 64,
@@ -1188,12 +1687,19 @@ const styles = StyleSheet.create({
   failButtonText: {
     ...typography.button,
     color: colors.orange,
-    fontSize: 16,
+    fontSize: 14,
+    opacity: 0.88,
+    textShadowColor: 'rgba(0,0,0,0.16)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
   },
   homeButtonText: {
     ...typography.button,
-    color: colors.ink,
+    color: 'rgba(17,19,18,0.68)',
     fontSize: 16,
+    textShadowColor: 'rgba(0,0,0,0.18)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 1,
   },
   endedHomeButtonText: {
     color: colors.orange,
@@ -1206,6 +1712,85 @@ const styles = StyleSheet.create({
   },
   warningText: {
     color: colors.orange,
+  },
+  // Ring glow — shadow layer sits behind dialGroove; body hidden by groove, only outward halo visible
+  ringGlowSuccess: {
+    position: 'absolute',
+    left: 20,
+    top: 20,
+    width: 276,
+    height: 276,
+    borderRadius: 138,
+    backgroundColor: '#2E2C2A',
+    shadowColor: '#5DFF3A',
+    shadowRadius: 26,
+    shadowOpacity: 1,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  ringGlowEnded: {
+    position: 'absolute',
+    left: 20,
+    top: 20,
+    width: 276,
+    height: 276,
+    borderRadius: 138,
+    backgroundColor: '#2E2C2A',
+    shadowColor: '#FF4040',
+    shadowRadius: 26,
+    shadowOpacity: 1,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  // Ring color wash — tints the groove channel; dialCenter renders on top hiding the center
+  ringColorSuccess: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(62,173,2,0.45)',
+  },
+  ringColorEnded: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(210,45,20,0.50)',
+  },
+  ringColorRunning: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(79,125,112,0.18)',
+  },
+  // Inner display surface — centered within dialCenter gradient bevel ring
+  dialCenterField: {
+    width: 178,
+    height: 178,
+    borderRadius: 999,
+    backgroundColor: '#F4F2EE',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dialCenterFieldTopShade: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    height: 28,
+  },
+  // Digit slot backing — recessed window frames behind each time digit
+  digitSlots: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    top: 60,
+    left: 0,
+    right: 0,
+    justifyContent: 'center',
+    gap: 3,
+  },
+  digitSlot: {
+    width: 28,
+    height: 46,
+    borderRadius: 5,
+    backgroundColor: 'rgba(0,0,0,0.065)',
+  },
+  digitSlotColon: {
+    width: 10,
+    height: 46,
   },
 });
 

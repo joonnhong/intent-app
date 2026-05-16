@@ -1,19 +1,140 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useCallback, useState, type ReactNode } from 'react';
+import { Alert, Fragment, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
-  calculateAchievements,
-  getFriends,
-  getSessionHistory,
-  getStats,
   resetAll,
   resetHistory,
   resetStats,
-  type Stats,
 } from '../services/storage';
-import { CeramicButton } from '../components/intent/CeramicButton';
-import { colors, layout, typography } from '../components/intent/theme';
+import { colors, spacing, typography } from '../constants/theme';
+
+// ─── Panel geometry (matches rest of app) ────────────────────────────────────
+
+const PANEL_RADIUS      = 22;
+const PANEL_GAP_INSET   = 4;
+const PANEL_GAP_RADIUS  = PANEL_RADIUS - 2;
+const PANEL_INNER_INSET = 6;
+const PANEL_INNER_RADIUS = PANEL_RADIUS - 4;
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function RowDivider() {
+  return (
+    <>
+      <View style={styles.dividerDark} />
+      <View style={styles.dividerLight} />
+    </>
+  );
+}
+
+function RecessedPanel({ children }: { children: ReactNode }) {
+  return (
+    <LinearGradient
+      colors={['#DEDAD0', '#FDFAF5']}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={styles.panelSeat}>
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(52,47,39,0.22)', 'rgba(52,47,39,0.11)', 'rgba(52,47,39,0.036)']}
+        locations={[0, 0.5, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.panelContactGap}
+      />
+      <View pointerEvents="none" style={styles.panelCavityShadow} />
+      <View style={styles.panelField}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(17,19,18,0.09)', 'rgba(17,19,18,0.028)', 'rgba(17,19,18,0)']}
+          locations={[0, 0.4, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.panelTopShade}
+        />
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(52,47,39,0)', 'rgba(52,47,39,0.04)']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.panelBottomDepth}
+        />
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.2)']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.panelBottomHighlight}
+        />
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0)']}
+          locations={[0, 0.22, 0.78, 1]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={styles.panelBottomGlint}
+        />
+        {children}
+      </View>
+    </LinearGradient>
+  );
+}
+
+function ShellButton({
+  label,
+  onPress,
+  disabled,
+  destructive,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  destructive?: boolean;
+}) {
+  return (
+    <Pressable onPress={onPress} disabled={disabled} style={disabled ? styles.shellBtnDisabled : undefined}>
+      {({ pressed }) => (
+        <LinearGradient
+          colors={['#C8C4BA', '#F6F3EC']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.shellBtnOuter}>
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(52,47,39,0.30)', 'rgba(52,47,39,0.08)', 'rgba(52,47,39,0.08)', 'rgba(52,47,39,0.24)']}
+            locations={[0, 0.36, 0.64, 1]}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={styles.shellBtnContactGap}
+          />
+          <View pointerEvents="none" style={styles.shellBtnCavity} />
+          <LinearGradient
+            colors={['#FAF8F3', '#DEDAD2']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={[styles.shellBtnField, pressed && styles.shellBtnFieldPressed]}>
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.18)', 'rgba(255,255,255,0)']}
+              locations={[0, 0.38, 1]}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={styles.shellBtnSheen}
+            />
+            <View pointerEvents="none" style={styles.shellBtnBottomGlint} />
+            <Text style={[styles.shellBtnText, destructive && styles.shellBtnTextDestructive]}>
+              {label}
+            </Text>
+          </LinearGradient>
+        </LinearGradient>
+      )}
+    </Pressable>
+  );
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type ResetKey = 'points' | 'streak' | 'history' | 'all';
 
@@ -30,9 +151,9 @@ type ResetAction = {
 const resetActions: ResetAction[] = [
   {
     key: 'points',
-    title: 'Reset total points',
+    title: 'Reset points',
     description: 'Set your total points back to 0. Streak, friends, and history stay intact.',
-    buttonLabel: 'Reset points',
+    buttonLabel: 'Reset',
     confirmTitle: 'Reset total points?',
     confirmMessage: 'Your total points will be set to 0. This cannot be undone.',
   },
@@ -40,23 +161,23 @@ const resetActions: ResetAction[] = [
     key: 'streak',
     title: 'Reset streak',
     description: 'Set your current daily streak back to 0. Points and history stay intact.',
-    buttonLabel: 'Reset streak',
+    buttonLabel: 'Reset',
     confirmTitle: 'Reset streak?',
     confirmMessage: 'Your current streak will be set to 0. This cannot be undone.',
   },
   {
     key: 'history',
-    title: 'Reset session history',
+    title: 'Reset history',
     description: 'Clear all saved session records. Points, streak, and friends stay intact.',
-    buttonLabel: 'Reset history',
+    buttonLabel: 'Reset',
     confirmTitle: 'Reset session history?',
     confirmMessage: 'Your saved session history will be cleared. This cannot be undone.',
   },
   {
     key: 'all',
     title: 'Reset all data',
-    description: 'Clear stats, session history, achievements, active sessions, friends, and invite code.',
-    buttonLabel: 'Reset all data',
+    description: 'Clears points, streak, session history, achievements, active session, friends, and invite code.',
+    buttonLabel: 'Reset all',
     confirmTitle: 'Reset all data?',
     confirmMessage:
       'This clears points, streak, session history, achievements, any active session, friends, and your invite code. This cannot be undone.',
@@ -64,102 +185,39 @@ const resetActions: ResetAction[] = [
   },
 ];
 
-const emptyStats: Stats = {
-  totalPoints: 0,
-  currentStreak: 0,
-  lastSuccessDate: null,
-};
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ManageDataScreen() {
-  const [stats, setStats] = useState<Stats>(emptyStats);
-  const [sessionCount, setSessionCount] = useState(0);
-  const [friendCount, setFriendCount] = useState(0);
-  const [achievementCount, setAchievementCount] = useState(0);
   const [isResetting, setIsResetting] = useState(false);
-
-  const reloadData = useCallback(async () => {
-    const [nextStats, history, friends] = await Promise.all([
-      getStats(),
-      getSessionHistory(),
-      getFriends(),
-    ]);
-    const achievements = calculateAchievements(nextStats, history);
-
-    setStats(nextStats);
-    setSessionCount(history.length);
-    setFriendCount(friends.length);
-    setAchievementCount(achievements.filter((achievement) => achievement.isUnlocked).length);
-  }, []);
-
-  useEffect(() => {
-    void reloadData();
-  }, [reloadData]);
 
   const runReset = useCallback(
     async (resetCallback: () => Promise<unknown>) => {
       setIsResetting(true);
-
       try {
         await resetCallback();
-        await reloadData();
       } finally {
         setIsResetting(false);
       }
     },
-    [reloadData]
+    []
   );
 
-  const handleResetPoints = useCallback(async () => {
-    await runReset(() => resetStats('points'));
-  }, [runReset]);
-
-  const handleResetStreak = useCallback(async () => {
-    await runReset(() => resetStats('streak'));
-  }, [runReset]);
-
-  const handleResetHistory = useCallback(async () => {
-    await runReset(resetHistory);
-  }, [runReset]);
-
-  const handleResetAll = useCallback(async () => {
-    await runReset(resetAll);
-  }, [runReset]);
-
   const executeReset = (key: ResetKey) => {
-    if (key === 'points') {
-      void handleResetPoints();
-      return;
-    }
-
-    if (key === 'streak') {
-      void handleResetStreak();
-      return;
-    }
-
-    if (key === 'history') {
-      void handleResetHistory();
-      return;
-    }
-
-    void handleResetAll();
+    if (key === 'points')  { void runReset(() => resetStats('points'));  return; }
+    if (key === 'streak')  { void runReset(() => resetStats('streak'));  return; }
+    if (key === 'history') { void runReset(resetHistory);                return; }
+    void runReset(resetAll);
   };
 
   const confirmReset = (action: ResetAction) => {
     if (Platform.OS === 'web') {
-      const shouldReset = window.confirm(`${action.confirmTitle}\n\n${action.confirmMessage}`);
-
-      if (shouldReset) {
+      if (window.confirm(`${action.confirmTitle}\n\n${action.confirmMessage}`)) {
         executeReset(action.key);
       }
-
       return;
     }
-
     Alert.alert(action.confirmTitle, action.confirmMessage, [
-      {
-        text: 'Cancel',
-        style: 'cancel',
-      },
+      { text: 'Cancel', style: 'cancel' },
       {
         text: action.buttonLabel,
         style: action.isDestructive ? 'destructive' : 'default',
@@ -168,6 +226,9 @@ export default function ManageDataScreen() {
     ]);
   };
 
+  const regularActions = resetActions.filter((a) => !a.isDestructive);
+  const dangerAction   = resetActions.find((a) => a.isDestructive)!;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
@@ -175,177 +236,260 @@ export default function ManageDataScreen() {
         showsVerticalScrollIndicator={false}
         style={styles.pageList}
         contentContainerStyle={styles.container}>
+
+        {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.logo}>Manage data</Text>
-          <Text style={styles.subtitle}>Local storage controls for Intent.</Text>
+          <Text style={styles.title}>Data & Privacy</Text>
+          <Text style={styles.subtitle}>All data is stored locally on your device and never sent to a server.</Text>
         </View>
 
-        <View style={styles.summaryGrid}>
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryValue}>{stats.totalPoints}</Text>
-            <Text style={styles.summaryLabel}>Points</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryValue}>{stats.currentStreak}</Text>
-            <Text style={styles.summaryLabel}>Streak</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryValue}>{sessionCount}</Text>
-            <Text style={styles.summaryLabel}>Sessions</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryValue}>{friendCount}</Text>
-            <Text style={styles.summaryLabel}>Friends</Text>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Reset options</Text>
-          <Text style={styles.cardBody}>
-            Reset actions ask for confirmation first and refresh this screen immediately after they complete.
-          </Text>
-          <View style={styles.actions}>
-            {resetActions.map((action) => (
-              <View key={action.title} style={styles.actionRow}>
-                <View style={styles.actionCopy}>
-                  <Text style={styles.actionTitle}>{action.title}</Text>
-                  <Text style={styles.actionDescription}>{action.description}</Text>
+        {/* Reset options */}
+        <View style={styles.section}>
+          <Text style={styles.sectionEyebrow}>Reset options</Text>
+          <RecessedPanel>
+            {regularActions.map((action, index) => (
+              <Fragment key={action.key}>
+                {index > 0 && <RowDivider />}
+                <View style={styles.actionRow}>
+                  <View style={styles.actionCopy}>
+                    <Text style={styles.actionTitle}>{action.title}</Text>
+                    <Text style={styles.actionDesc}>{action.description}</Text>
+                  </View>
+                  <ShellButton
+                    label={action.buttonLabel}
+                    onPress={() => confirmReset(action)}
+                    disabled={isResetting}
+                  />
                 </View>
-
-                <CeramicButton
-                  disabled={isResetting}
-                  size="medium"
-                  onPress={() => confirmReset(action)}
-                  textStyle={[styles.resetButtonText, action.isDestructive && styles.destructiveButtonText]}
-                  label={action.buttonLabel}
-                />
-              </View>
+              </Fragment>
             ))}
-          </View>
+          </RecessedPanel>
         </View>
 
-        <View style={styles.noteCard}>
-          <Text style={styles.noteText}>Unlocked achievements: {achievementCount}</Text>
+        {/* Danger zone */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionEyebrow, styles.dangerEyebrow]}>Danger zone</Text>
+          <RecessedPanel>
+            <View style={styles.actionRow}>
+              <View style={styles.actionCopy}>
+                <Text style={styles.actionTitle}>{dangerAction.title}</Text>
+                <Text style={styles.actionDesc}>{dangerAction.description}</Text>
+              </View>
+              <ShellButton
+                label={dangerAction.buttonLabel}
+                onPress={() => confirmReset(dangerAction)}
+                disabled={isResetting}
+                destructive
+              />
+            </View>
+          </RecessedPanel>
         </View>
+
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
+
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
   },
   pageList: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: layout.screenPadding,
+    paddingHorizontal: spacing.screenPadding,
     paddingTop: 16,
-    paddingBottom: 28,
+    paddingBottom: 32,
+    gap: 14,
   },
+
   header: {
-    marginBottom: 16,
+    gap: 6,
   },
-  logo: {
+  title: {
     ...typography.screenTitle,
     color: colors.ink,
   },
   subtitle: {
     ...typography.body,
     color: colors.muted,
-    fontSize: 14,
-    marginTop: 6,
-  },
-  summaryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  summaryCard: {
-    width: '48%',
-    borderWidth: 0,
-    borderColor: colors.line,
-    borderRadius: layout.cardRadius,
-    backgroundColor: colors.surface,
-    padding: 14,
-  },
-  summaryValue: {
-    ...typography.valueLarge,
-    color: colors.ink,
-    fontSize: 24,
-  },
-  summaryLabel: {
-    ...typography.meta,
-    color: colors.muted,
-    fontSize: 12,
-    marginTop: 6,
-  },
-  card: {
-    borderWidth: 0,
-    borderColor: colors.line,
-    borderRadius: layout.cardRadius,
-    backgroundColor: colors.surface,
-    marginTop: 12,
-    padding: 16,
-  },
-  cardTitle: {
-    ...typography.cardTitle,
-    color: colors.ink,
-  },
-  cardBody: {
-    ...typography.body,
-    color: colors.muted,
     fontSize: 13,
-    lineHeight: 19,
-    marginTop: 8,
+    lineHeight: 18,
   },
-  actions: {
-    gap: 12,
-    marginTop: 14,
+
+  section: {
+    gap: 8,
   },
+  sectionEyebrow: {
+    ...typography.panelLabel,
+    color: colors.sage,
+    textShadowColor: 'rgba(0,0,0,0.16)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
+  },
+  dangerEyebrow: {
+    color: colors.orange,
+  },
+
+  // ── Recessed panel ───────────────────────────────────────────────────────────
+  panelSeat: {
+    width: '100%',
+    borderRadius: PANEL_RADIUS,
+    padding: PANEL_INNER_INSET,
+    position: 'relative',
+  },
+  panelContactGap: {
+    position: 'absolute',
+    top: PANEL_GAP_INSET,
+    right: PANEL_GAP_INSET,
+    bottom: PANEL_GAP_INSET,
+    left: PANEL_GAP_INSET,
+    borderRadius: PANEL_GAP_RADIUS,
+  },
+  panelCavityShadow: {
+    position: 'absolute',
+    top: PANEL_GAP_INSET + 1,
+    right: PANEL_GAP_INSET + 1,
+    bottom: PANEL_GAP_INSET + 1,
+    left: PANEL_GAP_INSET + 1,
+    borderRadius: PANEL_GAP_RADIUS - 1,
+    backgroundColor: 'rgba(17,19,18,0.018)',
+    shadowColor: '#111312',
+    shadowOpacity: 0.16,
+    shadowRadius: 4,
+    shadowOffset: { width: 1, height: 2 },
+    elevation: 1,
+  },
+  panelField: {
+    overflow: 'hidden',
+    borderRadius: PANEL_INNER_RADIUS,
+    backgroundColor: '#E4E0D8',
+    paddingHorizontal: 14,
+    position: 'relative',
+    zIndex: 1,
+  },
+  panelTopShade: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    height: 28,
+  },
+  panelBottomDepth: {
+    position: 'absolute',
+    left: 0, right: 0, bottom: 0,
+    height: 18,
+  },
+  panelBottomHighlight: {
+    position: 'absolute',
+    left: 0, right: 0, bottom: 0,
+    height: 14,
+  },
+  panelBottomGlint: {
+    position: 'absolute',
+    bottom: 1, left: 0, right: 0,
+    height: 1,
+    borderRadius: 1,
+    zIndex: 3,
+  },
+
+  // ── Bevel divider ────────────────────────────────────────────────────────────
+  dividerDark: {
+    height: 1,
+    backgroundColor: 'rgba(17,19,18,0.18)',
+    marginHorizontal: -14,
+  },
+  dividerLight: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.65)',
+    marginHorizontal: -14,
+  },
+
+  // ── Action rows ──────────────────────────────────────────────────────────────
   actionRow: {
-    borderTopWidth: 0,
-    borderTopColor: colors.line,
-    paddingTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 12,
   },
   actionCopy: {
-    marginBottom: 12,
+    flex: 1,
+    gap: 3,
   },
   actionTitle: {
     ...typography.cardTitle,
     color: colors.ink,
-    fontSize: 16,
+    fontSize: 14,
   },
-  actionDescription: {
+  actionDesc: {
     ...typography.body,
-    marginTop: 5,
     color: colors.muted,
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 12,
+    lineHeight: 17,
   },
-  resetButtonText: {
-    ...typography.button,
+
+  // ── Shell button ─────────────────────────────────────────────────────────────
+  shellBtnDisabled: {
+    opacity: 0.45,
+  },
+  shellBtnOuter: {
+    borderRadius: 999,
+    padding: 4,
+    overflow: 'hidden',
+    position: 'relative',
+    flexShrink: 0,
+  },
+  shellBtnContactGap: {
+    position: 'absolute',
+    top: 3, right: 3, bottom: 3, left: 3,
+    borderRadius: 999,
+  },
+  shellBtnCavity: {
+    position: 'absolute',
+    top: 4, right: 4, bottom: 4, left: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(17,19,18,0.018)',
+    shadowColor: '#111312',
+    shadowOpacity: 0.14,
+    shadowRadius: 3,
+    shadowOffset: { width: 1, height: 2 },
+    elevation: 1,
+  },
+  shellBtnField: {
+    overflow: 'hidden',
+    borderRadius: 999,
+    position: 'relative',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  shellBtnFieldPressed: {
+    transform: [{ translateY: 1 }, { scale: 0.97 }],
+  },
+  shellBtnSheen: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    height: 12,
+  },
+  shellBtnBottomGlint: {
+    position: 'absolute',
+    right: 8, bottom: 1, left: 8,
+    height: 1,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,255,255,0.66)',
+  },
+  shellBtnText: {
+    ...typography.chip,
     color: colors.sage,
-    fontSize: 15,
+    fontSize: 12,
   },
-  destructiveButtonText: {
-    color: colors.clay,
-  },
-  noteCard: {
-    borderWidth: 0,
-    borderColor: colors.line,
-    borderRadius: layout.cardRadius,
-    backgroundColor: colors.surface,
-    marginTop: 12,
-    padding: 14,
-  },
-  noteText: {
-    ...typography.meta,
-    color: colors.muted,
-    fontSize: 13,
+  shellBtnTextDestructive: {
+    color: colors.orange,
   },
 });

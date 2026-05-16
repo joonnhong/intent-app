@@ -1,55 +1,61 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Fragment, useCallback, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getSessionHistory, type SessionRecord } from '../../services/storage';
+import { CeramicButton } from '../intent/CeramicButton';
 import { EmptyState } from '../intent/EmptyState';
+import { HardwareLed } from '../intent/HardwareLed';
 import { formatPlainDuration, formatSessionDate, formatSessionStatus } from '../intent/format';
-import { colors, layout, typography } from '../intent/theme';
+import { colors, spacing, typography } from '../../constants/theme';
+
+const PANEL_RADIUS = 22;
+const PANEL_GAP_INSET = 4;
+const PANEL_GAP_RADIUS = PANEL_RADIUS - 2;
+const PANEL_INNER_INSET = 6;
+const PANEL_INNER_RADIUS = PANEL_RADIUS - 4;
 
 type SessionFilter = 'all' | SessionRecord['status'];
 
-type FilterOption = {
-  label: string;
-  value: SessionFilter;
-};
+type FilterOption = { label: string; value: SessionFilter };
 
 const FILTER_OPTIONS: FilterOption[] = [
-  { label: 'All', value: 'all' },
-  { label: 'Completed', value: 'success' },
-  { label: 'Ended early', value: 'partial' },
-  { label: 'Too many penalties', value: 'ended' },
+  { label: 'All',        value: 'all' },
+  { label: 'Done',       value: 'success' },
+  { label: 'Quit',       value: 'partial' },
+  { label: 'Penalized',  value: 'ended' },
 ];
 
-function formatPointsLabel(pointsEarned: number) {
-  return pointsEarned > 0 ? `+${pointsEarned}` : '0';
+function formatPointsLabel(pts: number) {
+  return pts > 0 ? `+${pts}` : '0';
+}
+
+function RowDivider() {
+  return (
+    <>
+      <View style={styles.dividerDark} />
+      <View style={styles.dividerLight} />
+    </>
+  );
 }
 
 export default function RecentScreen() {
-  const [sessions, setSessions] = useState<SessionRecord[]>([]);
+  const [sessions, setSessions]           = useState<SessionRecord[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<SessionFilter>('all');
 
   useFocusEffect(
     useCallback(() => {
-      let isActive = true;
-
-      getSessionHistory().then((history) => {
-        if (isActive) {
-          setSessions(history);
-        }
-      });
-
-      return () => {
-        isActive = false;
-      };
+      let active = true;
+      getSessionHistory().then((h) => { if (active) setSessions(h); });
+      return () => { active = false; };
     }, [])
   );
 
   const filteredSessions = selectedFilter === 'all'
     ? sessions
-    : sessions.filter((session) => session.status === selectedFilter);
+    : sessions.filter((s) => s.status === selectedFilter);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -58,76 +64,132 @@ export default function RecentScreen() {
         showsVerticalScrollIndicator={false}
         style={styles.pageList}
         contentContainerStyle={styles.container}>
+
         <View style={styles.header}>
-          <Text style={styles.logo}>Recent</Text>
-          <Text style={styles.subtitle}>Your latest detox sessions.</Text>
+          <View style={styles.logoWrapper}>
+            <Text style={styles.logoBevel} importantForAccessibility="no">Recent</Text>
+            <Text style={styles.logo}>Recent</Text>
+          </View>
         </View>
 
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Session history</Text>
-            <Text style={styles.cardCount}>{filteredSessions.length}</Text>
+        <View style={styles.section}>
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.sectionEyebrow}>Session history</Text>
+            <Text style={styles.sectionCount}>{filteredSessions.length}</Text>
           </View>
 
+          {/* Filter chips */}
           <View style={styles.filterRow}>
             {FILTER_OPTIONS.map((option) => {
               const isSelected = selectedFilter === option.value;
-
               return (
-                <View key={option.value} style={styles.filterPillSeat}>
-                  <Pressable
-                    onPress={() => setSelectedFilter(option.value)}
-                    style={({ pressed }) => [
-                      styles.filterPill,
-                      isSelected && styles.selectedFilterPill,
-                      pressed && styles.filterPillPressed,
-                    ]}>
-                    <LinearGradient
-                      pointerEvents="none"
-                      colors={["rgba(255,255,255,0.38)", "rgba(220,216,207,0.16)"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.filterPillGradient}
-                    />
-                    <View pointerEvents="none" style={styles.filterPillBevel} />
-                    <Text style={[styles.filterPillText, isSelected && styles.selectedFilterPillText]}>
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                </View>
+                <CeramicButton
+                  key={option.value}
+                  size="small"
+                  onPress={() => setSelectedFilter(option.value)}
+                  surfaceStyle={styles.filterChipSurface}>
+                  <HardwareLed isOn={isSelected} size="small" />
+                  <Text style={[styles.filterPillText, isSelected && styles.selectedFilterPillText]}>
+                    {option.label}
+                  </Text>
+                </CeramicButton>
               );
             })}
           </View>
 
-          {filteredSessions.length > 0 ? (
-            filteredSessions.map((session) => (
-              <View key={session.id} style={styles.sessionRow}>
-                <View style={styles.sessionMain}>
-                  <Text style={styles.sessionDuration}>{formatPlainDuration(session.durationSeconds)}</Text>
-                  {session.purpose ? (
-                    <View style={styles.sessionPurposePill}>
-                      <Text style={styles.sessionPurposeText}>#{session.purpose}</Text>
-                    </View>
-                  ) : null}
-                  {session.note ? <Text style={styles.sessionNote}>Note: {session.note}</Text> : null}
-                  <Text style={styles.sessionMeta}>
-                    {formatSessionDate(session.date)} - {formatSessionStatus(session.status)}
-                  </Text>
-                  <Text style={styles.sessionMeta}>
-                    Completed {formatPlainDuration(session.completedSeconds)} - {session.penaltyCount} penalties
-                  </Text>
-                </View>
+          <LinearGradient
+            colors={['#DEDAD0', '#E3E0D7', '#ECEAE2', '#F4F2EB', '#FDFAF5']}
+            locations={[0, 0.22, 0.48, 0.76, 1]}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={styles.panelSeat}>
+            <LinearGradient pointerEvents="none" colors={['rgba(52,47,39,0.18)', 'rgba(52,47,39,0.08)', 'rgba(52,47,39,0.02)', 'rgba(52,47,39,0)']} locations={[0, 0.3, 0.7, 1]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.panelGapTop} />
+            <LinearGradient pointerEvents="none" colors={['rgba(52,47,39,0.10)', 'rgba(52,47,39,0.04)', 'rgba(52,47,39,0)']} locations={[0, 0.5, 1]} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.panelGapBottom} />
+            <LinearGradient pointerEvents="none" colors={['rgba(52,47,39,0.10)', 'rgba(52,47,39,0.03)', 'rgba(52,47,39,0)']} locations={[0, 0.5, 1]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.panelGapLeft} />
+            <LinearGradient pointerEvents="none" colors={['rgba(52,47,39,0.10)', 'rgba(52,47,39,0.03)', 'rgba(52,47,39,0)']} locations={[0, 0.5, 1]} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.panelGapRight} />
+            <View pointerEvents="none" style={styles.panelCavityShadow} />
+            <View style={styles.panelField}>
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(17,19,18,0.09)', 'rgba(17,19,18,0.028)', 'rgba(17,19,18,0)']}
+                locations={[0, 0.4, 1]}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={styles.panelTopShade}
+              />
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(52,47,39,0)', 'rgba(52,47,39,0.04)']}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={styles.panelBottomDepth}
+              />
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.2)']}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={styles.panelBottomHighlight}
+              />
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0)']}
+                locations={[0, 0.22, 0.78, 1]}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={styles.panelBottomGlint}
+              />
 
-                <Text style={styles.sessionPoints}>{formatPointsLabel(session.pointsEarned)}</Text>
-              </View>
-            ))
-          ) : (
-            <EmptyState
-              title={sessions.length > 0 ? 'No sessions in this category yet' : 'No sessions yet'}
-              body={sessions.length > 0 ? 'Try another filter or complete a new session.' : 'Start a detox session and your history will appear here.'}
-            />
-          )}
+              {filteredSessions.length > 0 ? (
+                filteredSessions.map((session, i, arr) => (
+                  <Fragment key={session.id}>
+                    <View style={styles.sessionRow}>
+                      <View style={styles.sessionCardInner}>
+                        {/* Left: LED status anchor */}
+                        <View style={styles.sessionLedCol}>
+                          <HardwareLed
+                            size="small"
+                            tone={session.status === 'partial' ? 'orange' : 'sage'}
+                            isOn={session.status !== 'ended'}
+                          />
+                        </View>
+                        {/* Right: content */}
+                        <View style={styles.sessionContent}>
+                          <View style={styles.sessionTopRow}>
+                            <Text style={styles.sessionDuration} numberOfLines={1}>{formatPlainDuration(session.durationSeconds)}</Text>
+                            <Text style={styles.sessionPoints}>{formatPointsLabel(session.pointsEarned)}</Text>
+                          </View>
+                          <View style={styles.sessionTagRow}>
+                            <Text style={[styles.sessionStatusText, session.status === 'success' && styles.statusSuccessText, session.status === 'partial' && styles.statusPartialText]} numberOfLines={1}>
+                              {formatSessionStatus(session.status)}
+                            </Text>
+                            {session.purpose ? (
+                              <>
+                                <Text style={styles.sessionMetaDot}>·</Text>
+                                <Text style={styles.sessionPurposeText} numberOfLines={1}>#{session.purpose}</Text>
+                              </>
+                            ) : null}
+                          </View>
+                          <Text style={styles.sessionMeta} numberOfLines={1}>
+                            {formatSessionDate(session.date)}{session.status !== 'success' && session.completedSeconds > 0 ? ` · ${formatPlainDuration(session.completedSeconds)} completed` : ''}{session.penaltyCount > 0 ? ` · ${session.penaltyCount} ${session.penaltyCount === 1 ? 'penalty' : 'penalties'}` : ''}
+                          </Text>
+                          {session.note ? <Text style={styles.sessionNote} numberOfLines={2}>{'"'}{session.note}{'"'}</Text> : null}
+                        </View>
+                      </View>
+                    </View>
+                    {i < arr.length - 1 && <RowDivider />}
+                  </Fragment>
+                ))
+              ) : (
+                <EmptyState
+                  title={sessions.length > 0 ? 'No sessions in this category yet' : 'No sessions yet'}
+                  body={sessions.length > 0 ? 'Try another filter or complete a new session.' : 'Start a detox session and your history will appear here.'}
+                />
+              )}
+            </View>
+          </LinearGradient>
         </View>
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -140,89 +202,147 @@ const styles = StyleSheet.create({
   },
   pageList: {
     flex: 1,
-    backgroundColor: colors.background,
   },
-  container: {
-    flexGrow: 1,
-    paddingHorizontal: layout.screenPadding,
-    paddingTop: 16,
-    paddingBottom: 28,
+  header: {},
+  logoWrapper: {
+    position: 'relative',
   },
-  header: {
-    marginBottom: 16,
+  logoBevel: {
+    ...typography.screenTitle,
+    color: 'rgba(255,255,255,0.65)',
   },
   logo: {
     ...typography.screenTitle,
-    color: colors.ink,
+    color: 'rgba(17,19,18,0.64)',
+    position: 'absolute',
+    top: -1,
+    left: 0,
+    right: 0,
+    textShadowColor: 'rgba(0,0,0,0.20)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 1,
   },
-  subtitle: {
-    ...typography.body,
-    color: colors.muted,
-    fontSize: 14,
-    marginTop: 6,
+  container: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 16,
+    paddingBottom: 28,
+    gap: 14,
   },
-  card: {
-    borderWidth: 0,
-    borderColor: colors.line,
-    borderRadius: layout.cardRadius,
-    backgroundColor: colors.surface,
-    padding: 16,
+  section: {
+    gap: 8,
   },
-  cardHeader: {
+  sectionTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
   },
-  cardTitle: {
-    ...typography.cardTitle,
-    color: colors.ink,
+  sectionEyebrow: {
+    ...typography.panelLabel,
+    color: colors.sage,
+    textShadowColor: 'rgba(0,0,0,0.16)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
   },
-  cardCount: {
+  sectionCount: {
     ...typography.meta,
     color: colors.muted,
-    fontSize: 13,
+    fontSize: 11,
   },
-  filterRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 2,
+
+  // Recessed panel (same stack as DashboardScreen)
+  panelSeat: {
+    width: '100%',
+    borderRadius: PANEL_RADIUS,
+    padding: PANEL_INNER_INSET,
+    position: 'relative',
   },
-  filterPillSeat: {
-    borderRadius: 999,
-    backgroundColor: 'rgba(213,209,200,0.44)',
-    padding: 3,
-    shadowColor: '#000000',
-    shadowOpacity: 0.045,
-    shadowRadius: 6,
-    shadowOffset: { width: 1, height: 3 },
+  panelGapTop: {
+    position: 'absolute',
+    top: PANEL_GAP_INSET, left: PANEL_GAP_INSET, right: PANEL_GAP_INSET,
+    height: 22,
+    borderTopLeftRadius: PANEL_GAP_RADIUS,
+    borderTopRightRadius: PANEL_GAP_RADIUS,
+  },
+  panelGapBottom: {
+    position: 'absolute',
+    bottom: PANEL_GAP_INSET, left: PANEL_GAP_INSET, right: PANEL_GAP_INSET,
+    height: 18,
+    borderBottomLeftRadius: PANEL_GAP_RADIUS,
+    borderBottomRightRadius: PANEL_GAP_RADIUS,
+  },
+  panelGapLeft: {
+    position: 'absolute',
+    left: PANEL_GAP_INSET, top: PANEL_GAP_INSET, bottom: PANEL_GAP_INSET,
+    width: 18,
+    borderTopLeftRadius: PANEL_GAP_RADIUS,
+    borderBottomLeftRadius: PANEL_GAP_RADIUS,
+  },
+  panelGapRight: {
+    position: 'absolute',
+    right: PANEL_GAP_INSET, top: PANEL_GAP_INSET, bottom: PANEL_GAP_INSET,
+    width: 18,
+    borderTopRightRadius: PANEL_GAP_RADIUS,
+    borderBottomRightRadius: PANEL_GAP_RADIUS,
+  },
+  panelCavityShadow: {
+    position: 'absolute',
+    top: PANEL_GAP_INSET + 1,
+    right: PANEL_GAP_INSET + 1,
+    bottom: PANEL_GAP_INSET + 1,
+    left: PANEL_GAP_INSET + 1,
+    borderRadius: PANEL_GAP_RADIUS - 1,
+    backgroundColor: 'rgba(17,19,18,0.018)',
+    shadowColor: '#111312',
+    shadowOpacity: 0.26,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 3 },
     elevation: 1,
   },
-  filterPill: {
-    borderWidth: 0,
-    borderColor: colors.line,
-    borderRadius: 999,
-    backgroundColor: colors.background,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  panelField: {
+    overflow: 'hidden',
+    borderRadius: PANEL_INNER_RADIUS,
+    backgroundColor: '#E4E0D8',
+    paddingLeft: 8,
+    paddingRight: 14,
+    position: 'relative',
+    zIndex: 1,
   },
-  filterPillGradient: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 999,
+  panelTopShade: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    height: 28,
   },
-  filterPillBevel: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+  panelBottomDepth: {
+    position: 'absolute',
+    left: 0, right: 0, bottom: 0,
+    height: 18,
   },
-  selectedFilterPill: {
-    borderColor: colors.sage,
-    backgroundColor: colors.sageSoft,
+  panelBottomHighlight: {
+    position: 'absolute',
+    left: 0, right: 0, bottom: 0,
+    height: 14,
   },
-  filterPillPressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.99 }],
+  panelBottomGlint: {
+    position: 'absolute',
+    bottom: 1,
+    left: 0,
+    right: 0,
+    height: 1,
+    borderRadius: 1,
+    zIndex: 3,
+  },
+  // Filter chips
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'stretch',
+  },
+  filterChipSurface: {
+    gap: 0,
+    paddingLeft: 0,
+    paddingRight: 8,
+    justifyContent: 'center',
   },
   filterPillText: {
     ...typography.chip,
@@ -232,57 +352,92 @@ const styles = StyleSheet.create({
   selectedFilterPillText: {
     color: colors.sage,
   },
+
+  // Beveled groove divider
+  dividerDark: {
+    height: 1,
+    backgroundColor: 'rgba(17,19,18,0.13)',
+    marginLeft: -8,
+    marginRight: -14,
+  },
+  dividerLight: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.65)',
+    marginLeft: -8,
+    marginRight: -14,
+  },
+
+  // Session rows
   sessionRow: {
+    paddingVertical: 2,
+  },
+  sessionCardInner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    gap: 12,
+  },
+  sessionLedCol: {
+    paddingTop: 2,
+  },
+  sessionContent: {
+    flex: 1,
+    gap: 3,
+  },
+  sessionTopRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  sessionTagRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    borderTopWidth: 0,
-    borderTopColor: colors.line,
-    gap: 16,
-    paddingTop: 14,
-    marginTop: 14,
-  },
-  sessionMain: {
-    flex: 1,
+    gap: 5,
   },
   sessionDuration: {
     ...typography.cardTitle,
     color: colors.ink,
-    fontSize: 17,
+    fontSize: 20,
+    flex: 1,
   },
-  sessionPurposePill: {
-    alignSelf: 'flex-start',
-    borderWidth: 0,
-    borderRadius: 999,
-    backgroundColor: colors.sageSoft,
-    marginTop: 6,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
+  sessionPoints: {
+    fontFamily: typography.cardTitle.fontFamily,
+    color: colors.sage,
+    fontSize: 16,
+  },
+  sessionStatusText: {
+    ...typography.chip,
+    color: colors.muted,
+    fontSize: 12,
+  },
+  statusSuccessText: {
+    color: colors.sage,
+  },
+  statusPartialText: {
+    color: colors.orange,
+  },
+  sessionMetaDot: {
+    ...typography.meta,
+    color: colors.muted,
+    fontSize: 11,
   },
   sessionPurposeText: {
     ...typography.chip,
     color: colors.sage,
+    fontSize: 12,
+  },
+  sessionMeta: {
+    ...typography.meta,
+    color: colors.muted,
     fontSize: 11,
+    lineHeight: 16,
   },
   sessionNote: {
     ...typography.body,
     color: colors.muted,
     fontSize: 12,
-    lineHeight: 18,
-    marginTop: 3,
-  },
-  sessionMeta: {
-    ...typography.meta,
-    color: colors.muted,
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 3,
-  },
-  sessionPoints: {
-    fontFamily: typography.cardTitle.fontFamily,
-    color: colors.sage,
-    fontSize: 17,
+    lineHeight: 17,
+    fontStyle: 'italic',
   },
 });
-
-
