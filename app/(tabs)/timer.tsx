@@ -4,10 +4,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Accelerometer } from 'expo-sensors';
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Animated, AppState, Easing, InteractionManager, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, FeGaussianBlur, FeMerge, FeMergeNode, Filter, G, Path, Rect } from 'react-native-svg';
+import Svg, { Circle, Defs, G, Line, LinearGradient as SvgLinearGradient, Polygon, RadialGradient as SvgRadialGradient, Stop } from 'react-native-svg';
 
 import { CeramicButton } from '../../components/intent/CeramicButton';
 import { HardwareLed } from '../../components/intent/HardwareLed';
@@ -18,7 +18,7 @@ import {
   getSoundEffectsEnabled,
   recordSession,
 } from '../../services/storage';
-import { colors, fonts, radius, spacing, typography } from '../../constants/theme';
+import { colors, spacing, typography } from '../../constants/theme';
 
 const ACTIVE_SESSION_KEY = 'intent.activeSession.v1';
 // Set to false before production release so sessions use the selected real duration.
@@ -41,137 +41,352 @@ const RESULT_GAP_RADIUS = RESULT_RADIUS - 2;
 const RESULT_INNER_INSET = 5;
 const RESULT_INNER_RADIUS = RESULT_RADIUS - 5;
 
-const TOTAL_DOTS = 48;
+// ─── SVG Dial internals ────────────────────────────────────────────────────
 
-type HardwareProgressRingProps = {
-  progress: number;
-  tone: 'sage' | 'orange';
-  isComplete: boolean;
+const DIAL_VB   = 328;
+const DIAL_HALF = DIAL_VB / 2;  // 164
+const TICK_CX   = 127.5;        // tick ring local centre
+const N_TICKS   = 60;
+
+// G from react-native-svg lacks a `style` type declaration; cast so Animated can drive transforms.
+const AnimatedSvgG = Animated.createAnimatedComponent(G as React.ComponentType<React.PropsWithChildren<{ style?: object }>>);
+
+// ─── Timer display bars ───────────────────────────────────────────────────
+
+// Figma layer 14 specifies four quiet display bars, each 24×57px.
+const TIMER_CELL_W = 24;
+const TIMER_CELL_H = 57;
+
+const timerDigitStyles = StyleSheet.create({
+  displayBar: {
+    width: TIMER_CELL_W,
+    height: TIMER_CELL_H,
+    backgroundColor: '#D9D9D9',
+    opacity: 0.76,
+  },
+});
+
+function TimerDisplayBar({ scale }: { scale: number }) {
+  return (
+    <View
+      importantForAccessibility="no"
+      style={[
+        timerDigitStyles.displayBar,
+        {
+          width: TIMER_CELL_W * scale,
+          height: TIMER_CELL_H * scale,
+        },
+      ]}
+    />
+  );
+}
+
+type DialTone = 'neutral' | 'green' | 'red';
+
+const TICK_TONE: Record<DialTone, string> = {
+  neutral: 'rgba(102,107,103,0.55)',
+  green:   'rgb(74,139,38)',
+  red:     'rgb(200,90,55)',
 };
 
-const HardwareProgressRing = memo(function HardwareProgressRing({
-  progress,
-  tone,
-  isComplete,
-}: HardwareProgressRingProps) {
-  const size = 276;
-  const center = 138;
-  const dotRadius = 122;
-  const activeCount = isComplete ? TOTAL_DOTS : Math.round(Math.min(progress, 1) * TOTAL_DOTS);
-  const activeColor = tone === 'sage' ? colors.sage : colors.orange;
+function DialTickMarks({ tone }: { tone: DialTone }) {
+  const stroke = TICK_TONE[tone];
+  const marks = useMemo(() => {
+    const out: React.ReactElement[] = [];
+    const OUTER = 122, INNER = 102;
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * 2 * Math.PI - Math.PI / 2;
+      const major = i % 5 === 0;
+      const len = major ? 11 : 6;
+      const w   = major ? 1.4 : 1.0;
+      out.push(<Line key={`o${i}`}
+        x1={TICK_CX + Math.cos(a) * (OUTER - len)} y1={TICK_CX + Math.sin(a) * (OUTER - len)}
+        x2={TICK_CX + Math.cos(a) * OUTER}         y2={TICK_CX + Math.sin(a) * OUTER}
+        stroke={stroke} strokeWidth={w} strokeLinecap="round" />);
+    }
+    for (let i = 0; i < 120; i++) {
+      const a = (i / 120) * 2 * Math.PI - Math.PI / 2;
+      const len = i % 2 === 0 ? 5 : 3;
+      out.push(<Line key={`i${i}`}
+        x1={TICK_CX + Math.cos(a) * (INNER - len)} y1={TICK_CX + Math.sin(a) * (INNER - len)}
+        x2={TICK_CX + Math.cos(a) * INNER}         y2={TICK_CX + Math.sin(a) * INNER}
+        stroke={stroke} strokeWidth={0.6} strokeLinecap="round" opacity={0.75} />);
+    }
+    return out;
+  }, [stroke]);
+  return <G>{marks}</G>;
+}
 
-  // Rotating pointer: triangle at the leading edge of progress
-  const pointerAngleDeg = -90 + Math.min(Math.max(progress, 0), 0.9999) * 360;
-  const pointerAngleRad = pointerAngleDeg * (Math.PI / 180);
-  const pCx = center + Math.cos(pointerAngleRad) * dotRadius;
-  const pCy = center + Math.sin(pointerAngleRad) * dotRadius;
+type HardwareTimerDialProps = {
+  size?: number;
+  remainingSeconds: number;
+  durationSeconds: number;
+  status: 'loading' | 'running' | 'success' | 'ended';
+  isWarning: boolean;
+};
+
+const HardwareTimerDial = memo(function HardwareTimerDial({
+  size = 320,
+  remainingSeconds,
+  durationSeconds,
+  status,
+  isWarning,
+}: HardwareTimerDialProps) {
+  const isComplete = status === 'success';
+  const isFailed   = status === 'ended';
+  const isRunning  = status === 'running';
+
+  const elapsed   = Math.max(0, durationSeconds - remainingSeconds);
+  const progress  = durationSeconds > 0 ? Math.min(1, elapsed / durationSeconds) : 0;
+  const tickStep  = Math.floor(progress * N_TICKS + 1e-6);
+  const targetRot = -(tickStep / N_TICKS) * 360;  // counter-clockwise
+
+  const rot = useRef(new Animated.Value(targetRot)).current;
+  useEffect(() => {
+    Animated.timing(rot, {
+      toValue: targetRot,
+      duration: 220,
+      easing: Easing.bezier(0.45, 1.6, 0.55, 1),
+      useNativeDriver: true,
+    }).start();
+  }, [targetRot, rot]);
+
+  const animRotStr = rot.interpolate({ inputRange: [-720, 720], outputRange: ['-720deg', '720deg'] });
+
+  const tone: DialTone = isComplete ? 'green' : (isFailed || isWarning) ? 'red' : 'neutral';
+  type LedTone = 'off' | 'amber' | 'green' | 'red';
+  const ledTone: LedTone = isComplete ? 'green' : isFailed ? 'red' : isWarning ? 'red' : isRunning ? 'amber' : 'off';
+
+  const [blink, setBlink] = useState(true);
+  useEffect(() => {
+    if (isRunning && !isWarning) {
+      const id = setInterval(() => setBlink(b => !b), 900);
+      return () => clearInterval(id);
+    }
+    if (isWarning || isFailed) {
+      const id = setInterval(() => setBlink(b => !b), 340);
+      return () => clearInterval(id);
+    }
+    setBlink(true);
+  }, [isRunning, isWarning, isFailed]);
+
+  const LED_CORE: Record<LedTone, string> = { off: '#432323', amber: '#FFA028', green: '#50DC50', red: '#F88181' };
+  const LED_EDGE: Record<LedTone, string> = { off: 'rgba(0,0,0,0.4)', amber: '#FFC86E', green: '#8CF08C', red: '#FF8B8B' };
+  const ledOpacity = (ledTone === 'off' || blink) ? 1 : 0.35;
+
+  const grooveFill = tone === 'green' ? 'rgba(80,180,60,0.35)' : tone === 'red' ? 'rgba(200,80,60,0.35)' : 'rgba(102,102,102,0.40)';
+  const grooveStroke = tone === 'green' ? 'rgba(80,200,60,0.7)' : tone === 'red' ? 'rgba(220,100,80,0.7)' : 'rgba(17,19,18,0.55)';
+  const triColor = isComplete ? 'rgb(74,139,38)' : (isFailed || isWarning) ? 'rgb(200,80,55)' : isRunning ? 'rgb(255,140,40)' : 'rgba(102,107,103,0.5)';
+
+  const showSecs = isComplete ? 0 : remainingSeconds;
+  const mm = Math.floor(showSecs / 60).toString().padStart(2, '0');
+  const ss = (Math.floor(showSecs) % 60).toString().padStart(2, '0');
+
+  const H = DIAL_HALF;
+  const scale = size / DIAL_VB;
+  const markerTop = H - 107 + 3;
+  const markerTip = markerTop + 11.4;
+  const ledCy = H - 79 + 28;
+  const digitRowTop = Math.round(((H - 79 + 50.5) / DIAL_VB) * size);
 
   return (
-    <View pointerEvents="none" style={styles.progressRing}>
-      <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+    <View style={{ width: size, height: size }}>
+      <Svg width={size} height={size} viewBox={`0 0 ${DIAL_VB} ${DIAL_VB}`}>
         <Defs>
-          <Filter id="dotGlow" x="-200%" y="-200%" width="500%" height="500%">
-            <FeGaussianBlur in="SourceGraphic" stdDeviation="1.8" result="blur" />
-            <FeMerge>
-              <FeMergeNode in="blur" />
-              <FeMergeNode in="SourceGraphic" />
-            </FeMerge>
-          </Filter>
-          <Filter id="dotGlowStrong" x="-250%" y="-250%" width="600%" height="600%">
-            <FeGaussianBlur in="SourceGraphic" stdDeviation="3.2" result="blur" />
-            <FeMerge>
-              <FeMergeNode in="blur" />
-              <FeMergeNode in="SourceGraphic" />
-            </FeMerge>
-          </Filter>
+          <SvgLinearGradient id="dtRecess" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%"   stopColor="#DEDAD0" />
+            <Stop offset="100%" stopColor="#F6F3EC" />
+          </SvgLinearGradient>
+          <SvgLinearGradient id="dtBvL" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%"   stopColor="#FFFCF6" />
+            <Stop offset="100%" stopColor="#DEDAD0" />
+          </SvgLinearGradient>
+          <SvgLinearGradient id="dtBvD" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%"   stopColor="#DEDAD0" />
+            <Stop offset="100%" stopColor="#FFFCF6" />
+          </SvgLinearGradient>
+          {/* Top inset shadow: matches CSS "inset 0 4px 8px rgba(0,0,0,0.15)" —
+              visible only in the top ~8% of the circle, then transparent.
+              Applied as fill overlays so there are no stroke-band edges. */}
+          <SvgLinearGradient id="dtShadTop" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%"  stopColor="rgba(0,0,0,0.00)" />
+            <Stop offset="2%"  stopColor="rgba(0,0,0,0.14)" />
+            <Stop offset="8%"  stopColor="rgba(0,0,0,0.04)" />
+            <Stop offset="12%" stopColor="rgba(0,0,0,0.00)" />
+            <Stop offset="100%" stopColor="rgba(0,0,0,0.00)" />
+          </SvgLinearGradient>
+          {/* Bottom specular: matches CSS "inset 0 -2px 4px rgba(255,255,255,0.6)" —
+              visible only in the bottom ~6% of the circle. */}
+          <SvgLinearGradient id="dtSpecLo" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%"  stopColor="rgba(255,255,255,0.00)" />
+            <Stop offset="92%" stopColor="rgba(255,255,255,0.00)" />
+            <Stop offset="97%" stopColor="rgba(255,255,255,0.40)" />
+            <Stop offset="100%" stopColor="rgba(255,255,255,0.35)" />
+          </SvgLinearGradient>
+          {/* Bottom cast shadow: simulates CSS "0 8px Npx rgba(0,0,0,0.X)" drop-shadow
+              from a raised disc pooling at the lower portion of the surface below it.
+              Visible only in the bottom ~15% of each receiving circle. */}
+          <SvgLinearGradient id="dtShadBot" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%"   stopColor="rgba(0,0,0,0.00)" />
+            <Stop offset="80%"  stopColor="rgba(0,0,0,0.00)" />
+            <Stop offset="91%"  stopColor="rgba(0,0,0,0.13)" />
+            <Stop offset="100%" stopColor="rgba(0,0,0,0.10)" />
+          </SvgLinearGradient>
+          <SvgRadialGradient id="dtGlowG" cx="50%" cy="50%" r="50%">
+            <Stop offset="0%"   stopColor="#55FF55" stopOpacity="0.55" />
+            <Stop offset="100%" stopColor="#55FF55" stopOpacity="0" />
+          </SvgRadialGradient>
+          <SvgRadialGradient id="dtGlowR" cx="50%" cy="50%" r="50%">
+            <Stop offset="0%"   stopColor="#FF2222" stopOpacity="0.55" />
+            <Stop offset="100%" stopColor="#FF2222" stopOpacity="0" />
+          </SvgRadialGradient>
+          <SvgRadialGradient id="dtGlowA" cx="50%" cy="50%" r="50%">
+            <Stop offset="0%"   stopColor="#FF9020" stopOpacity="0.55" />
+            <Stop offset="100%" stopColor="#FF9020" stopOpacity="0" />
+          </SvgRadialGradient>
         </Defs>
 
-        {Array.from({ length: TOTAL_DOTS }, (_, i) => {
-          const angleDeg = -90 + (360 / TOTAL_DOTS) * i;
-          const angleRad = angleDeg * (Math.PI / 180);
-          const cx = center + Math.cos(angleRad) * dotRadius;
-          const cy = center + Math.sin(angleRad) * dotRadius;
-          const isActive = i < activeCount;
+        {/* ── Concentric depth rings ──────────────────────────────────────────────
+             Fill-overlay technique: shadow/specular gradients are drawn as filled
+             circles. Inner circles cover the center, leaving only the narrow annular
+             zone visible. Because it's a fill gradient (no stroke width), there are
+             no hard ring edges — the shadow fades exactly like CSS inset box-shadow.
 
-          const midAngleDeg = -90 + (360 / TOTAL_DOTS) * (i + 0.5);
-          const midRad = midAngleDeg * (Math.PI / 180);
-          const gapCx = center + Math.cos(midRad) * dotRadius;
-          const gapCy = center + Math.sin(midRad) * dotRadius;
+             Gradient stop positions match the CSS reference:
+               dtShadTop: fades out by 12% (≈ inset 0 4px 8px rgba(0,0,0,0.15))
+               dtSpecLo:  starts at 92%  (≈ inset 0 -2px 4px rgba(255,255,255,0.6))
 
-          return (
-            <G key={i}>
-              <G transform={`rotate(${midAngleDeg + 90}, ${gapCx}, ${gapCy})`}>
-                <Rect
-                  x={gapCx - 0.75} y={gapCy - 2.5}
-                  width={1.5} height={5}
-                  rx={0.75}
-                  fill="#FFFFFF"
-                  fillOpacity={0.10}
-                  stroke="none"
-                />
-              </G>
-              {isActive ? (
-                <G transform={`rotate(${angleDeg + 90}, ${cx}, ${cy})`} filter={`url(#${isComplete ? 'dotGlowStrong' : 'dotGlow'})`}>
-                  <Rect
-                    x={cx - 2.0} y={cy - 7}
-                    width={4.0} height={14}
-                    rx={2.0}
-                    fill={activeColor}
-                    fillOpacity={isComplete ? 1 : 0.94}
-                    stroke="none"
-                  />
-                </G>
-              ) : (
-                <G transform={`rotate(${angleDeg + 90}, ${cx}, ${cy})`}>
-                  {/* Recessed groove base — warm gray precision engraving */}
-                  <Rect
-                    x={cx - 1.6} y={cy - 5.5}
-                    width={3.2} height={11}
-                    rx={1.6}
-                    fill="#C8C5BE"
-                    fillOpacity={0.48}
-                    stroke="none"
-                  />
-                  {/* Top-edge specular — light catching the groove rim */}
-                  <Rect
-                    x={cx - 1.0} y={cy - 5.5}
-                    width={2.0} height={4}
-                    rx={1.0}
-                    fill="#FFFFFF"
-                    fillOpacity={0.70}
-                    stroke="none"
-                  />
-                </G>
-              )}
-            </G>
-          );
-        })}
+             Raised discs carry a thin stroke (strokeWidth≈1.5) matching the
+             reference's "0 0 2px rgba(0,0,0,0.6)" crisp-edge outline. */}
 
-        {/* Rotating progress pointer — physical triangular marker with depth */}
-        {!isComplete && (
-          <>
-            {/* Offset shadow gives the marker a raised/physical feel */}
-            <G transform={`rotate(${pointerAngleDeg + 90}, ${pCx}, ${pCy})`}>
-              <Path
-                d={`M ${pCx},${pCy - 11} L ${pCx - 5},${pCy + 9} L ${pCx + 5},${pCy + 9} Z`}
-                fill="rgba(0,0,0,0.28)"
-                stroke="none"
-              />
-            </G>
-            <G transform={`rotate(${pointerAngleDeg + 90}, ${pCx}, ${pCy})`} filter="url(#dotGlowStrong)">
-              <Path
-                d={`M ${pCx},${pCy - 12} L ${pCx - 5.5},${pCy + 8} L ${pCx + 5.5},${pCy + 8} Z`}
-                fill={activeColor}
-                fillOpacity={0.97}
-                stroke="none"
-              />
-            </G>
-          </>
+        {/* Recessed well */}
+        <Circle cx={H} cy={H} r={164} fill="url(#dtRecess)" />
+        <Circle cx={H} cy={H} r={164} fill="url(#dtShadTop)" />
+        <Circle cx={H} cy={H} r={164} fill="url(#dtShadBot)" opacity={0.22} />
+        <Circle cx={H} cy={H} r={164} fill="url(#dtSpecLo)" />
+
+        {/* Raised outer bevel — bright-top → dark-bottom + thin edge.
+            Figma: shadow 0 0 2px rgba(0,0,0,0.6) + 0 4px 4px rgba(0,0,0,0.15) */}
+        <Circle cx={H} cy={H} r={158}
+          fill="url(#dtBvL)"
+          stroke="rgba(0,0,0,0.52)" strokeWidth={1.5} />
+        <Circle cx={H} cy={H} r={158} fill="url(#dtShadTop)" />
+        <Circle cx={H} cy={H} r={158} fill="url(#dtSpecLo)" />
+
+        {/* Flat surface */}
+        <Circle cx={H} cy={H} r={152} fill="#F0EEE9" />
+
+        {/* Inner bevel dark (recessed groove edge) */}
+        <Circle cx={H} cy={H} r={152} fill="url(#dtShadTop)" opacity={0.55} />
+        <Circle cx={H} cy={H} r={144} fill="url(#dtBvD)" />
+        <Circle cx={H} cy={H} r={144} fill="url(#dtSpecLo)" />
+
+        {/* Groove ring — glows on complete/failed.
+            Figma: fill rgba(102,102,102,0.4), inset shadow 0 4px 4px rgba(17,19,18,0.1) + inset 0 0 2.1px rgba(17,19,18,0.8) */}
+        <Circle cx={H} cy={H} r={138} fill={grooveFill} stroke={grooveStroke} strokeWidth={2} />
+        <Circle cx={H} cy={H} r={138} fill="url(#dtShadTop)" />
+        <Circle cx={H} cy={H} r={138} fill="url(#dtShadBot)" opacity={0.22} />
+        {tone !== 'neutral' && (
+          <Circle cx={H} cy={H} r={136} fill="none"
+            stroke={tone === 'green' ? 'rgba(60,200,60,0.30)' : 'rgba(220,70,50,0.28)'}
+            strokeWidth={3} />
         )}
+
+        {/* Inner button background disc — raised above groove.
+            Figma: bg #f0eee9, shadow 0 0 4.1px rgba(0,0,0,0.6) + 0 8px 8px rgba(0,0,0,0.25) */}
+        <Circle cx={H} cy={H} r={130} fill="#F0EEE9"
+          stroke="rgba(0,0,0,0.40)" strokeWidth={1.5} />
+        <Circle cx={H} cy={H} r={130} fill="url(#dtShadTop)" opacity={0.6} />
+        <Circle cx={H} cy={H} r={130} fill="url(#dtSpecLo)" />
+
+        {/* Tick ring — rotates counter-clockwise as session progresses */}
+        <AnimatedSvgG style={{ transform: [{ translateX: H - TICK_CX }, { translateY: H - TICK_CX }] }}>
+          <AnimatedSvgG style={{ transform: [
+            { translateX: TICK_CX }, { translateY: TICK_CX },
+            { rotate: animRotStr },
+            { translateX: -TICK_CX }, { translateY: -TICK_CX },
+          ] }}>
+            <DialTickMarks tone={tone} />
+          </AnimatedSvgG>
+        </AnimatedSvgG>
+
+        {/* Inner raised bevel + dial face.
+            Figma: drop-shadow 0 0 1px rgba(0,0,0,0.6) + 0 8px 4px rgba(0,0,0,0.15) */}
+        <Circle cx={H} cy={H} r={113}
+          fill="url(#dtBvL)"
+          stroke="rgba(0,0,0,0.50)" strokeWidth={1.5} />
+        <Circle cx={H} cy={H} r={113} fill="url(#dtShadTop)" />
+        <Circle cx={H} cy={H} r={113} fill="url(#dtSpecLo)" />
+        <Circle cx={H} cy={H} r={107} fill="#F0EEE9" />
+
+        {/* Index triangle — 12 o'clock marker, inside inner disc.
+            Figma: top=3, h=11.4 within the 214px inner disc. */}
+        <Polygon
+          points={`${H-5},${markerTop} ${H+5},${markerTop} ${H},${markerTip}`}
+          fill={triColor}
+          stroke="rgba(0,0,0,0.15)"
+          strokeWidth={0.3}
+        />
+
+        {/* Inner disc surface */}
+        <Circle cx={H} cy={H} r={107} fill="url(#dtShadTop)" opacity={0.5} />
+        <Circle cx={H} cy={H} r={107} fill="url(#dtShadBot)" opacity={0.18} />
+        <Circle cx={H} cy={H} r={91} fill="url(#dtBvD)" />
+        <Circle cx={H} cy={H} r={91} fill="url(#dtSpecLo)" />
+
+        {/* Glass bevel — raised, bright-top → dark-bottom + edge.
+            Figma: drop-shadow 0 0 1px rgba(0,0,0,0.6) + 0 4px 2px rgba(0,0,0,0.15) */}
+        <Circle cx={H} cy={H} r={85}
+          fill="url(#dtBvL)"
+          stroke="rgba(0,0,0,0.48)" strokeWidth={1.2} />
+        <Circle cx={H} cy={H} r={85} fill="url(#dtShadTop)" />
+        <Circle cx={H} cy={H} r={85} fill="url(#dtSpecLo)" />
+
+        {/* Glass surface */}
+        <Circle cx={H} cy={H} r={79} fill="#F0EEE9" />
+        <Circle cx={H} cy={H} r={79} fill="url(#dtShadTop)" opacity={0.40} />
+        <Circle cx={H} cy={H} r={79} fill="url(#dtShadBot)" opacity={0.15} />
+
+        {/* Status LED — Figma: center (79,28) inside the 158px glass surface. */}
+        {ledTone !== 'off' && (
+          <Circle cx={H} cy={ledCy} r={7}
+            fill={ledTone === 'green' ? 'url(#dtGlowG)' : ledTone === 'red' ? 'url(#dtGlowR)' : 'url(#dtGlowA)'}
+            opacity={blink ? 0.7 : 0.2} />
+        )}
+        <Circle cx={H} cy={ledCy} r={4}
+          fill={LED_CORE[ledTone]}
+          stroke={LED_EDGE[ledTone]}
+          strokeWidth={0.5}
+          opacity={ledOpacity} />
+
       </Svg>
+
+      {/* Display bars — two MM / SS groups matching Figma layer 14. */}
+      <View
+        style={[StyleSheet.absoluteFill, { alignItems: 'center' }]}
+        accessibilityLabel={`Remaining time ${mm}:${ss}`}
+        pointerEvents="none">
+        <View style={{
+          position: 'absolute',
+          top: digitRowTop,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 12 * scale,
+        }}>
+          <View style={{ flexDirection: 'row', gap: 8 * scale }}>
+            <TimerDisplayBar scale={scale} />
+            <TimerDisplayBar scale={scale} />
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 * scale }}>
+            <TimerDisplayBar scale={scale} />
+            <TimerDisplayBar scale={scale} />
+          </View>
+        </View>
+      </View>
     </View>
   );
 });
+
 type SessionStatus = 'loading' | 'running' | 'success' | 'ended';
 type EndReason = 'manual' | 'penalties';
 type AccelerationReading = {
@@ -191,12 +406,6 @@ type ActiveSession = {
   note?: string;
 };
 
-function formatTime(totalSeconds: number) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
 
 function formatCompletedDuration(totalSeconds: number) {
   const safeSeconds = Math.max(0, totalSeconds);
@@ -417,7 +626,6 @@ export default function TimerScreen() {
   const soundEffectsEnabledRef = useRef(true);
   const sessionPurposeRef = useRef(sessionPurpose);
   const sessionNoteRef = useRef(sessionNote);
-  const indicatorPulseOpacity = useRef(new Animated.Value(1)).current;
   const resultOpacity = useRef(new Animated.Value(0)).current;
   const statusOpacity = useRef(new Animated.Value(1)).current;
   const successTintOpacity = useRef(new Animated.Value(0)).current;
@@ -636,37 +844,6 @@ export default function TimerScreen() {
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
-
-  useEffect(() => {
-    if (status !== 'running') {
-      indicatorPulseOpacity.stopAnimation();
-      indicatorPulseOpacity.setValue(1);
-      return;
-    }
-
-    const pulseAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(indicatorPulseOpacity, {
-          toValue: 0.12,
-          duration: 820,
-          useNativeDriver: true,
-        }),
-        Animated.timing(indicatorPulseOpacity, {
-          toValue: 1,
-          duration: 820,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-
-    pulseAnimation.start();
-
-    return () => {
-      pulseAnimation.stop();
-      indicatorPulseOpacity.setValue(1);
-    };
-  }, [indicatorPulseOpacity, status]);
-
 
   useEffect(() => {
     sessionDurationSecondsRef.current = sessionDurationSeconds;
@@ -955,21 +1132,7 @@ export default function TimerScreen() {
     : trackingMessage;
   const resultButtonLabel = isSuccess ? 'Back home' : 'Done';
   const completedDurationLabel = formatCompletedDuration(completedSeconds);
-  const selectedDurationSeconds = Math.max(1, sessionDurationSeconds);
   const countdownDurationSeconds = Math.max(1, countdownDurationSecondsRef.current);
-  const countdownProgress = Math.min(
-    1,
-    Math.max(0, (countdownDurationSeconds - remainingSeconds) / countdownDurationSeconds)
-  );
-  const uiCompletedSeconds = isSuccess
-    ? selectedDurationSeconds
-    : isEnded
-    ? completedSeconds
-    : TEST_MODE
-    ? selectedDurationSeconds * countdownProgress
-    : Math.max(0, sessionDurationSeconds - remainingSeconds);
-  const progress = Math.min(1, Math.max(0, uiCompletedSeconds / selectedDurationSeconds));
-
   const resultTitle = isSuccess
     ? 'Session complete'
     : isEnded && endReason === 'penalties'
@@ -1025,188 +1188,13 @@ export default function TimerScreen() {
 
           <View style={styles.timerWrap}>
             <View style={styles.dialStage}>
-              <View style={styles.dialHousingWrapper}>
-                <View pointerEvents="none" style={styles.dialHousingShadow} />
-              <LinearGradient
-                colors={['#F8F6F0', '#DEDAD0', '#EAE7DF']}
-                locations={[0, 0.55, 1]}
-                start={{ x: 0.25, y: 0 }}
-                end={{ x: 0.75, y: 1 }}
-                style={styles.dialOuter}>
-                {/* 4-sided contact gap — stronger top, graduated sides and bottom */}
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={['rgba(52,47,39,0.28)', 'rgba(52,47,39,0.13)', 'rgba(52,47,39,0)']}
-                  locations={[0, 0.45, 1]}
-                  start={{ x: 0.5, y: 0 }}
-                  end={{ x: 0.5, y: 1 }}
-                  style={styles.dialContactGapTop}
-                />
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={['rgba(52,47,39,0.14)', 'rgba(52,47,39,0.05)', 'rgba(52,47,39,0)']}
-                  start={{ x: 0.5, y: 1 }}
-                  end={{ x: 0.5, y: 0 }}
-                  style={styles.dialContactGapBottom}
-                />
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={['rgba(52,47,39,0.14)', 'rgba(52,47,39,0.04)', 'rgba(52,47,39,0)']}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  style={styles.dialContactGapLeft}
-                />
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={['rgba(52,47,39,0.14)', 'rgba(52,47,39,0.04)', 'rgba(52,47,39,0)']}
-                  start={{ x: 1, y: 0.5 }}
-                  end={{ x: 0, y: 0.5 }}
-                  style={styles.dialContactGapRight}
-                />
-                <Animated.View pointerEvents="none" style={[styles.ringGlowSuccess, { opacity: successTintOpacity }]} />
-                <Animated.View pointerEvents="none" style={[styles.ringGlowEnded, { opacity: endedTintOpacity }]} />
-                <View style={styles.dialGroove}>
-                  <HardwareProgressRing
-                    progress={progress}
-                    tone={isWarning || isEnded ? 'orange' : 'sage'}
-                    isComplete={isSuccess}
-                  />
-                  <LinearGradient
-                    pointerEvents="none"
-                    colors={['rgba(0,0,0,0.22)', 'rgba(0,0,0,0.08)', 'rgba(0,0,0,0)']}
-                    locations={[0, 0.42, 1]}
-                    start={{ x: 0.5, y: 0 }}
-                    end={{ x: 0.5, y: 1 }}
-                    style={styles.dialGrooveTopShade}
-                  />
-                  {/* Specular highlight — machined channel catches light at top */}
-                  <LinearGradient
-                    pointerEvents="none"
-                    colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0)']}
-                    start={{ x: 0.5, y: 0 }}
-                    end={{ x: 0.5, y: 1 }}
-                    style={styles.dialGrooveTopHighlight}
-                  />
-                  {/* Lateral groove shading — precision-machined channel feel */}
-                  <LinearGradient
-                    pointerEvents="none"
-                    colors={['rgba(0,0,0,0.14)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.14)']}
-                    locations={[0, 0.18, 0.82, 1]}
-                    start={{ x: 0, y: 0.5 }}
-                    end={{ x: 1, y: 0.5 }}
-                    style={styles.dialGrooveSideShade}
-                  />
-                  <LinearGradient
-                    pointerEvents="none"
-                    colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.12)']}
-                    start={{ x: 0.5, y: 0 }}
-                    end={{ x: 0.5, y: 1 }}
-                    style={styles.dialGrooveBottomShade}
-                  />
-                  <Animated.View pointerEvents="none" style={[styles.ringColorSuccess, { opacity: successTintOpacity }]} />
-                  <Animated.View pointerEvents="none" style={[styles.ringColorEnded, { opacity: endedTintOpacity }]} />
-                  {/* Constant sage illumination during normal running — dial feels lit from within */}
-                  {status === 'running' && !isWarning && (
-                    <View pointerEvents="none" style={styles.ringColorRunning} />
-                  )}
-                  {/* Inner rim ring — bright edge where raised center face meets the recessed channel */}
-                  <View pointerEvents="none" style={styles.dialCenterRimRing} />
-                  <LinearGradient
-                    colors={['#FFFFFF', '#DEDAD2']}
-                    start={{ x: 0.5, y: 0 }}
-                    end={{ x: 0.5, y: 1 }}
-                    style={styles.dialCenter}>
-                    <LinearGradient
-                      pointerEvents="none"
-                      colors={['rgba(255,255,255,0.52)', 'rgba(255,255,255,0.18)', 'rgba(255,255,255,0)']}
-                      locations={[0, 0.30, 0.65]}
-                      start={{ x: 0.18, y: 0 }}
-                      end={{ x: 0.82, y: 0.70 }}
-                      style={styles.dialSurfaceTopLight}
-                    />
-                    {/* Top-left directional highlight — raised ceramic disk catches ambient light */}
-                    <LinearGradient
-                      pointerEvents="none"
-                      colors={['rgba(255,255,255,0.45)', 'rgba(255,255,255,0.12)', 'rgba(255,255,255,0)']}
-                      locations={[0, 0.28, 0.65]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.dialCenterBevelLight}
-                    />
-                    <LinearGradient
-                      pointerEvents="none"
-                      colors={['rgba(17,19,18,0.06)', 'rgba(17,19,18,0)', 'rgba(17,19,18,0)', 'rgba(17,19,18,0.06)']}
-                      locations={[0, 0.22, 0.78, 1]}
-                      start={{ x: 0, y: 0.5 }}
-                      end={{ x: 1, y: 0.5 }}
-                      style={styles.dialCenterSideVignette}
-                    />
-                    <LinearGradient
-                      pointerEvents="none"
-                      colors={['rgba(17,19,18,0)', 'rgba(17,19,18,0.05)']}
-                      start={{ x: 0.5, y: 0 }}
-                      end={{ x: 0.5, y: 1 }}
-                      style={styles.dialCenterBottomVignette}
-                    />
-                    <LinearGradient
-                      pointerEvents="none"
-                      colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.42)', 'rgba(255,255,255,0.42)', 'rgba(255,255,255,0)']}
-                      locations={[0, 0.2, 0.8, 1]}
-                      start={{ x: 0, y: 0.5 }}
-                      end={{ x: 1, y: 0.5 }}
-                      style={styles.dialCenterBottomGlint}
-                    />
-                    {/* Bottom-right contact shadow — opposite of top-left highlight completes bevel illusion */}
-                    <LinearGradient
-                      pointerEvents="none"
-                      colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.06)', 'rgba(0,0,0,0.13)']}
-                      locations={[0, 0.55, 1]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.dialCenterBevelShadow}
-                    />
-                    {/* Inner flat display surface — centered within the gradient bevel ring */}
-                    <View style={styles.dialCenterField}>
-                      <LinearGradient
-                        pointerEvents="none"
-                        colors={['rgba(17,19,18,0.07)', 'rgba(17,19,18,0)']}
-                        start={{ x: 0.5, y: 0 }}
-                        end={{ x: 0.5, y: 1 }}
-                        style={styles.dialCenterFieldTopShade}
-                      />
-                      {/* Digit slot backing — four recessed windows behind the time digits */}
-                      <View pointerEvents="none" style={styles.digitSlots}>
-                        <View style={styles.digitSlot} />
-                        <View style={styles.digitSlot} />
-                        <View style={styles.digitSlotColon} />
-                        <View style={styles.digitSlot} />
-                        <View style={styles.digitSlot} />
-                      </View>
-                      <View pointerEvents="none" style={styles.ledLight}>
-                        <HardwareLed
-                          size="small"
-                          isOn
-                          tone={isSuccess ? 'sage' : isWarning ? 'orange' : 'sage'}
-                          pulseOpacity={status === 'running' ? indicatorPulseOpacity : undefined}
-                        />
-                      </View>
-                      <Text
-                        style={[
-                          styles.timerText,
-                          isSuccess && styles.successText,
-                          isEnded && styles.endedText,
-                          isWarning && styles.warningText,
-                        ]}>
-                        {formatTime(remainingSeconds)}
-                      </Text>
-                      <Text style={[styles.dialSubLabel, isSuccess && styles.successText, isEnded && styles.endedText, isWarning && styles.warningText]}>
-                        {isLoading ? 'RESTORE' : isEnded ? 'ENDED' : isSuccess ? 'DONE' : 'ACTIVE'}
-                      </Text>
-                    </View>
-                  </LinearGradient>
-                </View>
-              </LinearGradient>
-              </View>
+              <HardwareTimerDial
+                size={326}
+                remainingSeconds={remainingSeconds}
+                durationSeconds={countdownDurationSeconds}
+                status={status}
+                isWarning={isWarning}
+              />
             </View>
 
             {/* Fixed-height status zone — dial position never shifts between states */}
@@ -1370,176 +1358,10 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
   },
   dialStage: {
-    height: 330,
+    height: 338,
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  dialHousingWrapper: {
-    width: 316,
-    height: 316,
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dialHousingShadow: {
-    position: 'absolute',
-    width: 316,
-    height: 316,
-    borderRadius: 158,
-    backgroundColor: '#E8E5DE',
-    shadowColor: '#111312',
-    shadowOpacity: 0.45,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 12,
-  },
-  dialOuter: {
-    width: 316,
-    height: 316,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 158,
-    overflow: 'hidden',
-  },
-  dialContactGapTop: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0,
-    height: 60,
-    borderTopLeftRadius: 158,
-    borderTopRightRadius: 158,
-  },
-  dialContactGapBottom: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    height: 48,
-    borderBottomLeftRadius: 158,
-    borderBottomRightRadius: 158,
-  },
-  dialContactGapLeft: {
-    position: 'absolute',
-    left: 0, top: 0, bottom: 0,
-    width: 48,
-    borderTopLeftRadius: 158,
-    borderBottomLeftRadius: 158,
-  },
-  dialContactGapRight: {
-    position: 'absolute',
-    right: 0, top: 0, bottom: 0,
-    width: 48,
-    borderTopRightRadius: 158,
-    borderBottomRightRadius: 158,
-  },
-  progressRing: {
-    position: 'absolute',
-    width: 276,
-    height: 276,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dialGroove: {
-    width: 276,
-    height: 276,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 138,
-    backgroundColor: '#2E2C2A',
-    overflow: 'hidden',
-  },
-  dialGrooveTopShade: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 72,
-  },
-  dialGrooveTopHighlight: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 60,
-  },
-  dialGrooveSideShade: {
-    position: 'absolute',
-    top: 0, bottom: 0, left: 0, right: 0,
-  },
-  dialGrooveBottomShade: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    height: 56,
-  },
-  dialCenter: {
-    width: 210,
-    height: 210,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.dial,
-    overflow: 'hidden',
-  },
-  dialSurfaceTopLight: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 112,
-  },
-  dialCenterBevelLight: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-  },
-  dialCenterBevelShadow: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-  },
-  // Thin bright ring just outside dialCenter — accent at center/channel boundary
-  dialCenterRimRing: {
-    position: 'absolute',
-    width: 218,
-    height: 218,
-    borderRadius: 109,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-  },
-  dialCenterSideVignette: {
-    position: 'absolute',
-    top: 0, bottom: 0, left: 0, right: 0,
-  },
-  dialCenterBottomVignette: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    height: 60,
-  },
-  dialCenterBottomGlint: {
-    position: 'absolute',
-    bottom: 2,
-    left: 0,
-    right: 0,
-    height: 1,
-  },
-  ledLight: {
-    position: 'absolute',
-    top: 16,
-    width: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  timerText: {
-    fontFamily: fonts.monoBold,
-    fontSize: 42,
-    lineHeight: 50,
-    letterSpacing: 1.5,
-    color: colors.ink,
-    marginTop: 8,
-  },
-  dialSubLabel: {
-    ...typography.panelLabel,
-    color: colors.faint,
-    opacity: 0.42,
-    marginTop: spacing.xs,
-    textShadowColor: 'rgba(0,0,0,0.3)',
-    textShadowOffset: { width: 0, height: -1 },
-    textShadowRadius: 0.5,
   },
   statusArea: {
     height: 116,
@@ -1713,95 +1535,7 @@ const styles = StyleSheet.create({
   warningText: {
     color: colors.orange,
   },
-  // Ring glow — shadow layer sits behind dialGroove; body hidden by groove, only outward halo visible
-  ringGlowSuccess: {
-    position: 'absolute',
-    left: 20,
-    top: 20,
-    width: 276,
-    height: 276,
-    borderRadius: 138,
-    backgroundColor: '#2E2C2A',
-    shadowColor: '#5DFF3A',
-    shadowRadius: 26,
-    shadowOpacity: 1,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  ringGlowEnded: {
-    position: 'absolute',
-    left: 20,
-    top: 20,
-    width: 276,
-    height: 276,
-    borderRadius: 138,
-    backgroundColor: '#2E2C2A',
-    shadowColor: '#FF4040',
-    shadowRadius: 26,
-    shadowOpacity: 1,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  // Ring color wash — tints the groove channel; dialCenter renders on top hiding the center
-  ringColorSuccess: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(62,173,2,0.45)',
-  },
-  ringColorEnded: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(210,45,20,0.50)',
-  },
-  ringColorRunning: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(79,125,112,0.18)',
-  },
-  // Inner display surface — centered within dialCenter gradient bevel ring
-  dialCenterField: {
-    width: 178,
-    height: 178,
-    borderRadius: 999,
-    backgroundColor: '#F4F2EE',
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dialCenterFieldTopShade: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0,
-    height: 28,
-  },
-  // Digit slot backing — recessed window frames behind each time digit
-  digitSlots: {
-    position: 'absolute',
-    flexDirection: 'row',
-    alignItems: 'center',
-    top: 60,
-    left: 0,
-    right: 0,
-    justifyContent: 'center',
-    gap: 3,
-  },
-  digitSlot: {
-    width: 28,
-    height: 46,
-    borderRadius: 5,
-    backgroundColor: 'rgba(0,0,0,0.065)',
-  },
-  digitSlotColon: {
-    width: 10,
-    height: 46,
-  },
 });
-
-
-
-
-
-
-
-
-
 
 
 

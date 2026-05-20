@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/aajoon/Project1/hongDev/intent-app && npx tsc --noEmit 2>&1 | head -20"
+          },
+          {
+            "type": "command",
+            "command": "cd /Users/aajoon/Project1/hongDev/intent-app && npx expo lint --fix --no-warn-ignored 2>&1 | tail -5"
+          }
+        ]
+      }
+    ]
+  }
+}
