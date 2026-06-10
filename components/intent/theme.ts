@@ -1,4 +1,4 @@
-import { fonts, typography } from '../../constants/theme';
+import { SCREEN_HORIZONTAL_PADDING, fonts, typography } from '../../constants/theme';
 
 export const colors = {
   background: '#F0EEE9',
@@ -13,7 +13,7 @@ export const colors = {
 };
 
 export const layout = {
-  screenPadding: 20,
+  screenPadding: SCREEN_HORIZONTAL_PADDING,
   cardRadius: 18,
   buttonRadius: 16,
 };

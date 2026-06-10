@@ -165,19 +165,10 @@ function getLocalDateKey(date = new Date()): string {
 
 export function calculateRewardPoints(durationMinutes: number): number {
   const normalizedDuration = Math.max(0, durationMinutes);
-  const basePoints = normalizedDuration * 2;
-  const durationBonus =
-    normalizedDuration >= 240
-      ? 2.5
-      : normalizedDuration >= 120
-      ? 2
-      : normalizedDuration >= 60
-      ? 1.5
-      : normalizedDuration >= 30
-      ? 1.2
-      : 1;
-
-  return Math.round(basePoints * durationBonus);
+  return Math.min(
+    999,
+    Math.round(1.18125 * normalizedDuration + 0.00028646 * normalizedDuration * normalizedDuration)
+  );
 }
 
 export function calculateAchievements(stats: Stats, history: SessionRecord[]): Achievement[] {

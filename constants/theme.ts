@@ -12,6 +12,15 @@ export const colors = {
   faint: '#9A9D99',
   line: 'rgba(17,19,18,0.08)',
   sage: '#4F7D70',
+  sageLight: '#6FA99A',
+  sageGlow: 'rgba(111,169,154,0.34)',
+  successGreen: '#338E01',
+  successGreenDeep: '#256901',
+  successGlow: 'rgba(51,142,1,0.50)',
+  alertRed: '#C94A35',
+  alertRedDeep: '#B94732',
+  alertOrangeRed: '#FF5A36',
+  alertGlow: 'rgba(201,74,53,0.42)',
   orange: '#FF5A2D',
   yellow: '#EAB308',
   successSoft: '#E3E9E2',
@@ -33,6 +42,10 @@ export const spacing = {
   cardGap: 14,
   controlGap: 10,
 } as const;
+
+export const SCREEN_HORIZONTAL_PADDING = spacing.screenPadding;
+export const OPTICAL_LABEL_INSET = 4;
+export const OPTICAL_ROUNDED_OUTSET = 2;
 
 export const radius = {
   panel: 28,

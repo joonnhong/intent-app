@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { useCallback, useState, type ReactNode } from 'react';
-import { Alert, Fragment, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Fragment, useCallback, useState, type ReactNode } from 'react';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -8,7 +8,12 @@ import {
   resetHistory,
   resetStats,
 } from '../services/storage';
-import { colors, spacing, typography } from '../constants/theme';
+import {
+  OPTICAL_LABEL_INSET,
+  SCREEN_HORIZONTAL_PADDING,
+  colors,
+  typography,
+} from '../constants/theme';
 
 // ─── Panel geometry (matches rest of app) ────────────────────────────────────
 
@@ -303,7 +308,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: spacing.screenPadding,
+    paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
     paddingTop: 16,
     paddingBottom: 32,
     gap: 14,
@@ -329,6 +334,7 @@ const styles = StyleSheet.create({
   sectionEyebrow: {
     ...typography.panelLabel,
     color: colors.sage,
+    marginHorizontal: OPTICAL_LABEL_INSET,
     textShadowColor: 'rgba(0,0,0,0.16)',
     textShadowOffset: { width: 0, height: -1 },
     textShadowRadius: 0.5,

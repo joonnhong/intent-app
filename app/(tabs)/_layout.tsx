@@ -9,8 +9,9 @@ export default function TabLayout() {
       tabBar={(props) => <TabBar {...props} />}
       screenOptions={{ headerShown: false }}>
       <Tabs.Screen name="index"   options={{ title: 'Dashboard' }} />
-      <Tabs.Screen name="session" options={{ title: 'Session' }} />
       <Tabs.Screen name="recent"  options={{ title: 'Recent' }} />
+      <Tabs.Screen name="session" options={{ title: 'Session' }} />
+      <Tabs.Screen name="friends" options={{ title: 'Friends' }} />
       <Tabs.Screen name="account" options={{ title: 'Account' }} />
       <Tabs.Screen name="timer"   options={{ href: null }} />
     </Tabs>

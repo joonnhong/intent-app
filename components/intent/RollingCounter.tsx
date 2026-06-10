@@ -24,6 +24,10 @@ function Digit({ targetDigit, staggerDelay }: DigitProps) {
   const directionRef = useRef(1);
   const [from, setFrom] = useState(targetDigit);
   const [to, setTo] = useState(targetDigit);
+  const fromRef = useRef(from);
+  const toRef = useRef(to);
+  fromRef.current = from;
+  toRef.current = to;
 
   useEffect(() => {
     const listenerId = anim.addListener(({ value }) => {
@@ -56,13 +60,16 @@ function Digit({ targetDigit, staggerDelay }: DigitProps) {
     });
   }, [from, to, anim, staggerDelay]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (targetDigit === to) return;
+    const currentFrom = fromRef.current;
+    const currentTo = toRef.current;
+    if (targetDigit === currentTo) return;
     runIdRef.current += 1;
     animRef.current?.stop();
-    const visibleDigit = progressRef.current >= 0.5 ? to : from;
+    const visibleDigit = progressRef.current >= 0.5 ? currentTo : currentFrom;
     if (visibleDigit === targetDigit) {
+      fromRef.current = targetDigit;
+      toRef.current = targetDigit;
       setFrom(targetDigit);
       setTo(targetDigit);
       return;
@@ -75,6 +82,8 @@ function Digit({ targetDigit, staggerDelay }: DigitProps) {
     const distance = Math.abs(shortDiff);
     pendingDuration.current = DIGIT_BASE_DURATION + distance * 22;
     shouldStartAnim.current = true;
+    fromRef.current = visibleDigit;
+    toRef.current = targetDigit;
     setFrom(visibleDigit);
     setTo(targetDigit);
   }, [targetDigit]);

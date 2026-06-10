@@ -1,16 +1,29 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Accelerometer } from 'expo-sensors';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Animated, AppState, Easing, InteractionManager, Platform, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  Animated,
+  AppState,
+  Easing,
+  Image,
+  InteractionManager,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, G, Line, LinearGradient as SvgLinearGradient, Polygon, RadialGradient as SvgRadialGradient, Stop } from 'react-native-svg';
 
 import { CeramicButton } from '../../components/intent/CeramicButton';
 import { HardwareLed } from '../../components/intent/HardwareLed';
+import { MotionSeismographStrip } from '../../components/intent/MotionSeismographStrip';
+import { RollingCounter } from '../../components/intent/RollingCounter';
+import { TimerDial, TIMER_DIAL_SIZE, type TimerDialVisualState } from '../../components/intent/TimerDial';
 import {
   applyPartialRewardAndFailure,
   applySuccess,
@@ -18,7 +31,7 @@ import {
   getSoundEffectsEnabled,
   recordSession,
 } from '../../services/storage';
-import { colors, spacing, typography } from '../../constants/theme';
+import { SCREEN_HORIZONTAL_PADDING, colors, spacing, typography } from '../../constants/theme';
 
 const ACTIVE_SESSION_KEY = 'intent.activeSession.v1';
 // Set to false before production release so sessions use the selected real duration.
@@ -35,357 +48,51 @@ const SUCCESS_SOUND = require('../../assets/sounds/success.mp3');
 const WARNING_SOUND = require('../../assets/sounds/warning.mp3');
 const END_SOUND = require('../../assets/sounds/end.mp3');
 
+const TIMER_ACTION_BUTTON_HEIGHT = 58;
+const TIMER_ACTION_AREA_HEIGHT = 68;
+const TIMER_ACTION_BOTTOM_OFFSET = 46;
+const TIMER_HEADER_TOP_OFFSET = -55;
+const TIMER_BLOCK_OFFSET_Y = 22;
 const RESULT_RADIUS = 20;
 const RESULT_GAP_INSET = 4;
 const RESULT_GAP_RADIUS = RESULT_RADIUS - 2;
 const RESULT_INNER_INSET = 5;
 const RESULT_INNER_RADIUS = RESULT_RADIUS - 5;
+const HEADER_GROOVE_TOP = -6;
+const HEADER_GROOVE_HEIGHT = 2;
+const SPEAKER_CLUSTER_WIDTH = 104.4;
+const SPEAKER_CLUSTER_HEIGHT = 23.8;
+const SPEAKER_HOLE_SIZE = 4.8;
+const SPEAKER_CLUSTER_PATTERN = [16, 16, 16, 16];
+const HEADER_GROOVE_TO_GRILLE_GAP = 14;
+const SPEAKER_CLUSTER_TOP = HEADER_GROOVE_TOP + HEADER_GROOVE_HEIGHT + HEADER_GROOVE_TO_GRILLE_GAP;
+const SPEAKER_CLUSTER_SIDE_OFFSET = 0;
+const SPEAKER_HOLE_ASSET = require('../../assets/speaker-grille/speaker-hole.png');
 
-// ─── SVG Dial internals ────────────────────────────────────────────────────
-
-const DIAL_VB   = 328;
-const DIAL_HALF = DIAL_VB / 2;  // 164
-const TICK_CX   = 127.5;        // tick ring local centre
-const N_TICKS   = 60;
-
-// G from react-native-svg lacks a `style` type declaration; cast so Animated can drive transforms.
-const AnimatedSvgG = Animated.createAnimatedComponent(G as React.ComponentType<React.PropsWithChildren<{ style?: object }>>);
-
-// ─── Timer display bars ───────────────────────────────────────────────────
-
-// Figma layer 14 specifies four quiet display bars, each 24×57px.
-const TIMER_CELL_W = 24;
-const TIMER_CELL_H = 57;
-
-const timerDigitStyles = StyleSheet.create({
-  displayBar: {
-    width: TIMER_CELL_W,
-    height: TIMER_CELL_H,
-    backgroundColor: '#D9D9D9',
-    opacity: 0.76,
-  },
-});
-
-function TimerDisplayBar({ scale }: { scale: number }) {
-  return (
-    <View
-      importantForAccessibility="no"
-      style={[
-        timerDigitStyles.displayBar,
-        {
-          width: TIMER_CELL_W * scale,
-          height: TIMER_CELL_H * scale,
-        },
-      ]}
-    />
-  );
-}
-
-type DialTone = 'neutral' | 'green' | 'red';
-
-const TICK_TONE: Record<DialTone, string> = {
-  neutral: 'rgba(102,107,103,0.55)',
-  green:   'rgb(74,139,38)',
-  red:     'rgb(200,90,55)',
+type SpeakerHolePosition = {
+  x: number;
+  y: number;
 };
 
-function DialTickMarks({ tone }: { tone: DialTone }) {
-  const stroke = TICK_TONE[tone];
-  const marks = useMemo(() => {
-    const out: React.ReactElement[] = [];
-    const OUTER = 122, INNER = 102;
-    for (let i = 0; i < 60; i++) {
-      const a = (i / 60) * 2 * Math.PI - Math.PI / 2;
-      const major = i % 5 === 0;
-      const len = major ? 11 : 6;
-      const w   = major ? 1.4 : 1.0;
-      out.push(<Line key={`o${i}`}
-        x1={TICK_CX + Math.cos(a) * (OUTER - len)} y1={TICK_CX + Math.sin(a) * (OUTER - len)}
-        x2={TICK_CX + Math.cos(a) * OUTER}         y2={TICK_CX + Math.sin(a) * OUTER}
-        stroke={stroke} strokeWidth={w} strokeLinecap="round" />);
-    }
-    for (let i = 0; i < 120; i++) {
-      const a = (i / 120) * 2 * Math.PI - Math.PI / 2;
-      const len = i % 2 === 0 ? 5 : 3;
-      out.push(<Line key={`i${i}`}
-        x1={TICK_CX + Math.cos(a) * (INNER - len)} y1={TICK_CX + Math.sin(a) * (INNER - len)}
-        x2={TICK_CX + Math.cos(a) * INNER}         y2={TICK_CX + Math.sin(a) * INNER}
-        stroke={stroke} strokeWidth={0.6} strokeLinecap="round" opacity={0.75} />);
-    }
-    return out;
-  }, [stroke]);
-  return <G>{marks}</G>;
+const SPEAKER_CLUSTER_COLUMNS = Math.max(...SPEAKER_CLUSTER_PATTERN);
+const SPEAKER_CLUSTER_ROWS = SPEAKER_CLUSTER_PATTERN.length;
+const SPEAKER_HOLE_GAP_X = (SPEAKER_CLUSTER_WIDTH - SPEAKER_CLUSTER_COLUMNS * SPEAKER_HOLE_SIZE) / (SPEAKER_CLUSTER_COLUMNS - 1);
+const SPEAKER_HOLE_GAP_Y = (SPEAKER_CLUSTER_HEIGHT - SPEAKER_CLUSTER_ROWS * SPEAKER_HOLE_SIZE) / (SPEAKER_CLUSTER_ROWS - 1);
+
+function createSpeakerClusterPositions(): SpeakerHolePosition[] {
+  return SPEAKER_CLUSTER_PATTERN.flatMap((columns, rowIndex) => {
+    const rowWidth = columns * SPEAKER_HOLE_SIZE + (columns - 1) * SPEAKER_HOLE_GAP_X;
+    const rowStartX = (SPEAKER_CLUSTER_WIDTH - rowWidth) / 2;
+    const y = rowIndex * (SPEAKER_HOLE_SIZE + SPEAKER_HOLE_GAP_Y);
+
+    return Array.from({ length: columns }, (_, columnIndex) => ({
+      x: rowStartX + columnIndex * (SPEAKER_HOLE_SIZE + SPEAKER_HOLE_GAP_X),
+      y,
+    }));
+  });
 }
 
-type HardwareTimerDialProps = {
-  size?: number;
-  remainingSeconds: number;
-  durationSeconds: number;
-  status: 'loading' | 'running' | 'success' | 'ended';
-  isWarning: boolean;
-};
-
-const HardwareTimerDial = memo(function HardwareTimerDial({
-  size = 320,
-  remainingSeconds,
-  durationSeconds,
-  status,
-  isWarning,
-}: HardwareTimerDialProps) {
-  const isComplete = status === 'success';
-  const isFailed   = status === 'ended';
-  const isRunning  = status === 'running';
-
-  const elapsed   = Math.max(0, durationSeconds - remainingSeconds);
-  const progress  = durationSeconds > 0 ? Math.min(1, elapsed / durationSeconds) : 0;
-  const tickStep  = Math.floor(progress * N_TICKS + 1e-6);
-  const targetRot = -(tickStep / N_TICKS) * 360;  // counter-clockwise
-
-  const rot = useRef(new Animated.Value(targetRot)).current;
-  useEffect(() => {
-    Animated.timing(rot, {
-      toValue: targetRot,
-      duration: 220,
-      easing: Easing.bezier(0.45, 1.6, 0.55, 1),
-      useNativeDriver: true,
-    }).start();
-  }, [targetRot, rot]);
-
-  const animRotStr = rot.interpolate({ inputRange: [-720, 720], outputRange: ['-720deg', '720deg'] });
-
-  const tone: DialTone = isComplete ? 'green' : (isFailed || isWarning) ? 'red' : 'neutral';
-  type LedTone = 'off' | 'amber' | 'green' | 'red';
-  const ledTone: LedTone = isComplete ? 'green' : isFailed ? 'red' : isWarning ? 'red' : isRunning ? 'amber' : 'off';
-
-  const [blink, setBlink] = useState(true);
-  useEffect(() => {
-    if (isRunning && !isWarning) {
-      const id = setInterval(() => setBlink(b => !b), 900);
-      return () => clearInterval(id);
-    }
-    if (isWarning || isFailed) {
-      const id = setInterval(() => setBlink(b => !b), 340);
-      return () => clearInterval(id);
-    }
-    setBlink(true);
-  }, [isRunning, isWarning, isFailed]);
-
-  const LED_CORE: Record<LedTone, string> = { off: '#432323', amber: '#FFA028', green: '#50DC50', red: '#F88181' };
-  const LED_EDGE: Record<LedTone, string> = { off: 'rgba(0,0,0,0.4)', amber: '#FFC86E', green: '#8CF08C', red: '#FF8B8B' };
-  const ledOpacity = (ledTone === 'off' || blink) ? 1 : 0.35;
-
-  const grooveFill = tone === 'green' ? 'rgba(80,180,60,0.35)' : tone === 'red' ? 'rgba(200,80,60,0.35)' : 'rgba(102,102,102,0.40)';
-  const grooveStroke = tone === 'green' ? 'rgba(80,200,60,0.7)' : tone === 'red' ? 'rgba(220,100,80,0.7)' : 'rgba(17,19,18,0.55)';
-  const triColor = isComplete ? 'rgb(74,139,38)' : (isFailed || isWarning) ? 'rgb(200,80,55)' : isRunning ? 'rgb(255,140,40)' : 'rgba(102,107,103,0.5)';
-
-  const showSecs = isComplete ? 0 : remainingSeconds;
-  const mm = Math.floor(showSecs / 60).toString().padStart(2, '0');
-  const ss = (Math.floor(showSecs) % 60).toString().padStart(2, '0');
-
-  const H = DIAL_HALF;
-  const scale = size / DIAL_VB;
-  const markerTop = H - 107 + 3;
-  const markerTip = markerTop + 11.4;
-  const ledCy = H - 79 + 28;
-  const digitRowTop = Math.round(((H - 79 + 50.5) / DIAL_VB) * size);
-
-  return (
-    <View style={{ width: size, height: size }}>
-      <Svg width={size} height={size} viewBox={`0 0 ${DIAL_VB} ${DIAL_VB}`}>
-        <Defs>
-          <SvgLinearGradient id="dtRecess" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%"   stopColor="#DEDAD0" />
-            <Stop offset="100%" stopColor="#F6F3EC" />
-          </SvgLinearGradient>
-          <SvgLinearGradient id="dtBvL" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%"   stopColor="#FFFCF6" />
-            <Stop offset="100%" stopColor="#DEDAD0" />
-          </SvgLinearGradient>
-          <SvgLinearGradient id="dtBvD" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%"   stopColor="#DEDAD0" />
-            <Stop offset="100%" stopColor="#FFFCF6" />
-          </SvgLinearGradient>
-          {/* Top inset shadow: matches CSS "inset 0 4px 8px rgba(0,0,0,0.15)" —
-              visible only in the top ~8% of the circle, then transparent.
-              Applied as fill overlays so there are no stroke-band edges. */}
-          <SvgLinearGradient id="dtShadTop" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%"  stopColor="rgba(0,0,0,0.00)" />
-            <Stop offset="2%"  stopColor="rgba(0,0,0,0.14)" />
-            <Stop offset="8%"  stopColor="rgba(0,0,0,0.04)" />
-            <Stop offset="12%" stopColor="rgba(0,0,0,0.00)" />
-            <Stop offset="100%" stopColor="rgba(0,0,0,0.00)" />
-          </SvgLinearGradient>
-          {/* Bottom specular: matches CSS "inset 0 -2px 4px rgba(255,255,255,0.6)" —
-              visible only in the bottom ~6% of the circle. */}
-          <SvgLinearGradient id="dtSpecLo" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%"  stopColor="rgba(255,255,255,0.00)" />
-            <Stop offset="92%" stopColor="rgba(255,255,255,0.00)" />
-            <Stop offset="97%" stopColor="rgba(255,255,255,0.40)" />
-            <Stop offset="100%" stopColor="rgba(255,255,255,0.35)" />
-          </SvgLinearGradient>
-          {/* Bottom cast shadow: simulates CSS "0 8px Npx rgba(0,0,0,0.X)" drop-shadow
-              from a raised disc pooling at the lower portion of the surface below it.
-              Visible only in the bottom ~15% of each receiving circle. */}
-          <SvgLinearGradient id="dtShadBot" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%"   stopColor="rgba(0,0,0,0.00)" />
-            <Stop offset="80%"  stopColor="rgba(0,0,0,0.00)" />
-            <Stop offset="91%"  stopColor="rgba(0,0,0,0.13)" />
-            <Stop offset="100%" stopColor="rgba(0,0,0,0.10)" />
-          </SvgLinearGradient>
-          <SvgRadialGradient id="dtGlowG" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%"   stopColor="#55FF55" stopOpacity="0.55" />
-            <Stop offset="100%" stopColor="#55FF55" stopOpacity="0" />
-          </SvgRadialGradient>
-          <SvgRadialGradient id="dtGlowR" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%"   stopColor="#FF2222" stopOpacity="0.55" />
-            <Stop offset="100%" stopColor="#FF2222" stopOpacity="0" />
-          </SvgRadialGradient>
-          <SvgRadialGradient id="dtGlowA" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%"   stopColor="#FF9020" stopOpacity="0.55" />
-            <Stop offset="100%" stopColor="#FF9020" stopOpacity="0" />
-          </SvgRadialGradient>
-        </Defs>
-
-        {/* ── Concentric depth rings ──────────────────────────────────────────────
-             Fill-overlay technique: shadow/specular gradients are drawn as filled
-             circles. Inner circles cover the center, leaving only the narrow annular
-             zone visible. Because it's a fill gradient (no stroke width), there are
-             no hard ring edges — the shadow fades exactly like CSS inset box-shadow.
-
-             Gradient stop positions match the CSS reference:
-               dtShadTop: fades out by 12% (≈ inset 0 4px 8px rgba(0,0,0,0.15))
-               dtSpecLo:  starts at 92%  (≈ inset 0 -2px 4px rgba(255,255,255,0.6))
-
-             Raised discs carry a thin stroke (strokeWidth≈1.5) matching the
-             reference's "0 0 2px rgba(0,0,0,0.6)" crisp-edge outline. */}
-
-        {/* Recessed well */}
-        <Circle cx={H} cy={H} r={164} fill="url(#dtRecess)" />
-        <Circle cx={H} cy={H} r={164} fill="url(#dtShadTop)" />
-        <Circle cx={H} cy={H} r={164} fill="url(#dtShadBot)" opacity={0.22} />
-        <Circle cx={H} cy={H} r={164} fill="url(#dtSpecLo)" />
-
-        {/* Raised outer bevel — bright-top → dark-bottom + thin edge.
-            Figma: shadow 0 0 2px rgba(0,0,0,0.6) + 0 4px 4px rgba(0,0,0,0.15) */}
-        <Circle cx={H} cy={H} r={158}
-          fill="url(#dtBvL)"
-          stroke="rgba(0,0,0,0.52)" strokeWidth={1.5} />
-        <Circle cx={H} cy={H} r={158} fill="url(#dtShadTop)" />
-        <Circle cx={H} cy={H} r={158} fill="url(#dtSpecLo)" />
-
-        {/* Flat surface */}
-        <Circle cx={H} cy={H} r={152} fill="#F0EEE9" />
-
-        {/* Inner bevel dark (recessed groove edge) */}
-        <Circle cx={H} cy={H} r={152} fill="url(#dtShadTop)" opacity={0.55} />
-        <Circle cx={H} cy={H} r={144} fill="url(#dtBvD)" />
-        <Circle cx={H} cy={H} r={144} fill="url(#dtSpecLo)" />
-
-        {/* Groove ring — glows on complete/failed.
-            Figma: fill rgba(102,102,102,0.4), inset shadow 0 4px 4px rgba(17,19,18,0.1) + inset 0 0 2.1px rgba(17,19,18,0.8) */}
-        <Circle cx={H} cy={H} r={138} fill={grooveFill} stroke={grooveStroke} strokeWidth={2} />
-        <Circle cx={H} cy={H} r={138} fill="url(#dtShadTop)" />
-        <Circle cx={H} cy={H} r={138} fill="url(#dtShadBot)" opacity={0.22} />
-        {tone !== 'neutral' && (
-          <Circle cx={H} cy={H} r={136} fill="none"
-            stroke={tone === 'green' ? 'rgba(60,200,60,0.30)' : 'rgba(220,70,50,0.28)'}
-            strokeWidth={3} />
-        )}
-
-        {/* Inner button background disc — raised above groove.
-            Figma: bg #f0eee9, shadow 0 0 4.1px rgba(0,0,0,0.6) + 0 8px 8px rgba(0,0,0,0.25) */}
-        <Circle cx={H} cy={H} r={130} fill="#F0EEE9"
-          stroke="rgba(0,0,0,0.40)" strokeWidth={1.5} />
-        <Circle cx={H} cy={H} r={130} fill="url(#dtShadTop)" opacity={0.6} />
-        <Circle cx={H} cy={H} r={130} fill="url(#dtSpecLo)" />
-
-        {/* Tick ring — rotates counter-clockwise as session progresses */}
-        <AnimatedSvgG style={{ transform: [{ translateX: H - TICK_CX }, { translateY: H - TICK_CX }] }}>
-          <AnimatedSvgG style={{ transform: [
-            { translateX: TICK_CX }, { translateY: TICK_CX },
-            { rotate: animRotStr },
-            { translateX: -TICK_CX }, { translateY: -TICK_CX },
-          ] }}>
-            <DialTickMarks tone={tone} />
-          </AnimatedSvgG>
-        </AnimatedSvgG>
-
-        {/* Inner raised bevel + dial face.
-            Figma: drop-shadow 0 0 1px rgba(0,0,0,0.6) + 0 8px 4px rgba(0,0,0,0.15) */}
-        <Circle cx={H} cy={H} r={113}
-          fill="url(#dtBvL)"
-          stroke="rgba(0,0,0,0.50)" strokeWidth={1.5} />
-        <Circle cx={H} cy={H} r={113} fill="url(#dtShadTop)" />
-        <Circle cx={H} cy={H} r={113} fill="url(#dtSpecLo)" />
-        <Circle cx={H} cy={H} r={107} fill="#F0EEE9" />
-
-        {/* Index triangle — 12 o'clock marker, inside inner disc.
-            Figma: top=3, h=11.4 within the 214px inner disc. */}
-        <Polygon
-          points={`${H-5},${markerTop} ${H+5},${markerTop} ${H},${markerTip}`}
-          fill={triColor}
-          stroke="rgba(0,0,0,0.15)"
-          strokeWidth={0.3}
-        />
-
-        {/* Inner disc surface */}
-        <Circle cx={H} cy={H} r={107} fill="url(#dtShadTop)" opacity={0.5} />
-        <Circle cx={H} cy={H} r={107} fill="url(#dtShadBot)" opacity={0.18} />
-        <Circle cx={H} cy={H} r={91} fill="url(#dtBvD)" />
-        <Circle cx={H} cy={H} r={91} fill="url(#dtSpecLo)" />
-
-        {/* Glass bevel — raised, bright-top → dark-bottom + edge.
-            Figma: drop-shadow 0 0 1px rgba(0,0,0,0.6) + 0 4px 2px rgba(0,0,0,0.15) */}
-        <Circle cx={H} cy={H} r={85}
-          fill="url(#dtBvL)"
-          stroke="rgba(0,0,0,0.48)" strokeWidth={1.2} />
-        <Circle cx={H} cy={H} r={85} fill="url(#dtShadTop)" />
-        <Circle cx={H} cy={H} r={85} fill="url(#dtSpecLo)" />
-
-        {/* Glass surface */}
-        <Circle cx={H} cy={H} r={79} fill="#F0EEE9" />
-        <Circle cx={H} cy={H} r={79} fill="url(#dtShadTop)" opacity={0.40} />
-        <Circle cx={H} cy={H} r={79} fill="url(#dtShadBot)" opacity={0.15} />
-
-        {/* Status LED — Figma: center (79,28) inside the 158px glass surface. */}
-        {ledTone !== 'off' && (
-          <Circle cx={H} cy={ledCy} r={7}
-            fill={ledTone === 'green' ? 'url(#dtGlowG)' : ledTone === 'red' ? 'url(#dtGlowR)' : 'url(#dtGlowA)'}
-            opacity={blink ? 0.7 : 0.2} />
-        )}
-        <Circle cx={H} cy={ledCy} r={4}
-          fill={LED_CORE[ledTone]}
-          stroke={LED_EDGE[ledTone]}
-          strokeWidth={0.5}
-          opacity={ledOpacity} />
-
-      </Svg>
-
-      {/* Display bars — two MM / SS groups matching Figma layer 14. */}
-      <View
-        style={[StyleSheet.absoluteFill, { alignItems: 'center' }]}
-        accessibilityLabel={`Remaining time ${mm}:${ss}`}
-        pointerEvents="none">
-        <View style={{
-          position: 'absolute',
-          top: digitRowTop,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 12 * scale,
-        }}>
-          <View style={{ flexDirection: 'row', gap: 8 * scale }}>
-            <TimerDisplayBar scale={scale} />
-            <TimerDisplayBar scale={scale} />
-          </View>
-          <View style={{ flexDirection: 'row', gap: 8 * scale }}>
-            <TimerDisplayBar scale={scale} />
-            <TimerDisplayBar scale={scale} />
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-});
+const SPEAKER_GRILLE_POSITIONS = createSpeakerClusterPositions();
 
 type SessionStatus = 'loading' | 'running' | 'success' | 'ended';
 type EndReason = 'manual' | 'penalties';
@@ -405,6 +112,53 @@ type ActiveSession = {
   purpose?: string;
   note?: string;
 };
+
+function SpeakerGrille({ position }: { position: 'left' | 'center' | 'right' }) {
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        styles.speakerGrille,
+        position === 'left'
+          ? styles.speakerGrilleLeft
+          : position === 'center'
+          ? styles.speakerGrilleCenter
+          : styles.speakerGrilleRight,
+      ]}>
+      {SPEAKER_GRILLE_POSITIONS.map((hole) => (
+        <Image
+          key={`speaker-hole-${hole.x}-${hole.y}`}
+          source={SPEAKER_HOLE_ASSET}
+          resizeMode="contain"
+          style={[styles.speakerHole, { left: hole.x, top: hole.y }]}
+        />
+      ))}
+    </View>
+  );
+}
+
+function DecorativeGroove({ style }: { style: StyleProp<ViewStyle> }) {
+  return (
+    <View pointerEvents="none" style={[styles.decorativeGroove, style]}>
+      <View style={styles.decorativeGrooveShade} />
+      <View style={styles.decorativeGrooveHighlight} />
+    </View>
+  );
+}
+
+function HardwareDecorations() {
+  return (
+    <View pointerEvents="none" style={styles.decorationLayer}>
+      <SpeakerGrille position="left" />
+      <SpeakerGrille position="center" />
+      <SpeakerGrille position="right" />
+      <DecorativeGroove style={styles.decorativeGrooveHeader} />
+      <DecorativeGroove style={styles.decorativeGrooveLeft} />
+      <DecorativeGroove style={styles.decorativeGrooveRight} />
+      <DecorativeGroove style={styles.decorativeGrooveLower} />
+    </View>
+  );
+}
 
 
 function formatCompletedDuration(totalSeconds: number) {
@@ -437,6 +191,14 @@ function getParamNumber(value: string | string[] | undefined, fallback: number) 
 
 function getRemainingSeconds(endTime: number) {
   return Math.max(0, Math.floor((endTime - Date.now()) / 1000));
+}
+
+function formatTimerDisplay(totalSeconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function normalizeActiveSession(value: Partial<ActiveSession> | null): ActiveSession | null {
@@ -605,6 +367,7 @@ export default function TimerScreen() {
   const [status, setStatus] = useState<SessionStatus>('loading');
   const [isStill, setIsStill] = useState(true);
   const [isWarning, setIsWarning] = useState(false);
+  const [movementLevel, setMovementLevel] = useState(0);
   const [penaltyCount, setPenaltyCount] = useState(0);
   const [partialPoints, setPartialPoints] = useState(0);
   const [completedSeconds, setCompletedSeconds] = useState(0);
@@ -642,6 +405,7 @@ export default function TimerScreen() {
     statusRef.current = 'loading';
     setStatus('loading');
     setIsWarning(false);
+    setMovementLevel(0);
     setShowPenaltyMessage(false);
     setShowResumedMessage(false);
     setPenaltyCount(0);
@@ -680,6 +444,7 @@ export default function TimerScreen() {
     setRemainingSeconds(0);
     setStatus('success');
     setIsWarning(false);
+    setMovementLevel(0);
     setShowPenaltyMessage(false);
     setShowResumedMessage(false);
     void playNotificationHaptic(Haptics.NotificationFeedbackType.Success);
@@ -735,6 +500,7 @@ export default function TimerScreen() {
     setEndReason(reason);
     setStatus('ended');
     setIsWarning(false);
+    setMovementLevel(0);
     setShowPenaltyMessage(false);
     setShowResumedMessage(false);
     void clearActiveSession();
@@ -783,6 +549,7 @@ export default function TimerScreen() {
       setRemainingSeconds(getRemainingSeconds(nextSession.endTime));
       setIsStill(true);
       setIsWarning(false);
+      setMovementLevel(0);
       setPenaltyCount(nextSession.penaltyCount);
       penaltyCountRef.current = nextSession.penaltyCount;
       setPartialPoints(0);
@@ -915,6 +682,7 @@ export default function TimerScreen() {
 
     if (Platform.OS === 'web') {
       setIsStill(true);
+      setMovementLevel(0);
       return;
     }
 
@@ -931,6 +699,7 @@ export default function TimerScreen() {
         .then((isAvailable) => {
           if (!isSubscribed || !isAvailable) {
             setIsStill(true);
+            setMovementLevel(0);
             return;
           }
 
@@ -939,6 +708,7 @@ export default function TimerScreen() {
             if (!lastReading) {
               lastReading = reading;
               setIsStill(true);
+              setMovementLevel(0);
               return;
             }
 
@@ -948,11 +718,13 @@ export default function TimerScreen() {
               Math.abs(reading.z - lastReading.z);
 
             setIsStill(movementDelta < STILL_THRESHOLD);
+            setMovementLevel(Math.min(1, movementDelta / 0.28));
             lastReading = reading;
           });
         })
         .catch(() => {
           setIsStill(true);
+          setMovementLevel(0);
         });
     });
 
@@ -1074,7 +846,7 @@ export default function TimerScreen() {
     };
   }, [endSessionWithPartialReward, isStill, routeSessionId, status]);
 
-  // Cross-fade between running status and result panel — no layout shift.
+  // Cross-fade between running status and result panel ??no layout shift.
   useEffect(() => {
     const showResult = status === 'success' || status === 'ended';
     Animated.parallel([
@@ -1133,12 +905,34 @@ export default function TimerScreen() {
   const resultButtonLabel = isSuccess ? 'Back home' : 'Done';
   const completedDurationLabel = formatCompletedDuration(completedSeconds);
   const countdownDurationSeconds = Math.max(1, countdownDurationSecondsRef.current);
+  const dialElapsedSeconds = Math.max(0, countdownDurationSeconds - remainingSeconds);
+  const dialProgress = Math.min(1, dialElapsedSeconds / countdownDurationSeconds);
+  const dialRemainingTime = formatTimerDisplay(isSuccess ? 0 : remainingSeconds);
+  const dialVisualState: TimerDialVisualState = isLoading
+    ? 'loading'
+    : isSuccess
+    ? 'success'
+    : isEnded && endReason === 'penalties'
+    ? 'failed'
+    : isEnded
+    ? 'ended'
+    : isWarning
+    ? 'warning'
+    : 'running';
   const resultTitle = isSuccess
     ? 'Session complete'
     : isEnded && endReason === 'penalties'
     ? 'Penalized'
     : 'Quit';
   const resultPoints = isSuccess ? sessionRewardPoints : partialPoints;
+  const statusTranslateY = statusOpacity.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-4, 0],
+  });
+  const resultTranslateY = resultOpacity.interpolate({
+    inputRange: [0, 1],
+    outputRange: [8, 0],
+  });
 
   const handleFailedPress = () => {
     void playNotificationHaptic(Haptics.NotificationFeedbackType.Error);
@@ -1146,61 +940,53 @@ export default function TimerScreen() {
   };
 
   const handleHomePress = () => {
-    router.replace('/');
+    router.replace('/session');
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Animated background tints — fade in/out independently, no layout impact */}
+      {/* Animated background tints ??fade in/out independently, no layout impact */}
       <Animated.View pointerEvents="none" style={[styles.bgTintSuccess, { opacity: successTintOpacity }]} />
       <Animated.View pointerEvents="none" style={[styles.bgTintEnded, { opacity: endedTintOpacity }]} />
       <View style={styles.container}>
         <View style={styles.devicePanel}>
+          <HardwareDecorations />
 
           <View style={styles.panelHeader}>
             <Text style={styles.panelLabel}>INTENT FOCUS</Text>
-            {status === 'running' ? (
-              <LinearGradient
-                colors={['#DEDAD0', '#F4F1EA']}
-                start={{ x: 0.5, y: 0 }}
-                end={{ x: 0.5, y: 1 }}
-                style={styles.penaltyPillSeat}>
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={['rgba(52,47,39,0.20)', 'rgba(52,47,39,0.07)', 'rgba(52,47,39,0)']}
-                  start={{ x: 0.5, y: 0 }}
-                  end={{ x: 0.5, y: 1 }}
-                  style={styles.penaltyPillContactGap}
-                />
-                <View style={styles.penaltyPillField}>
-                  <LinearGradient
-                    pointerEvents="none"
-                    colors={['rgba(17,19,18,0.07)', 'rgba(17,19,18,0)']}
-                    start={{ x: 0.5, y: 0 }}
-                    end={{ x: 0.5, y: 1 }}
-                    style={styles.penaltyPillTopShade}
-                  />
-                  <Text style={styles.penaltyPillText}>PENALTY {penaltyCount}</Text>
+            <View style={styles.penaltyReadout}>
+              <Text style={styles.penaltyReadoutLabel}>PENALTY</Text>
+              <View style={styles.penaltyCounterWindow}>
+                <View style={styles.penaltyCounterScale}>
+                  <RollingCounter value={penaltyCount} digits={1} maxValue={MAX_PENALTY_COUNT} noComma />
                 </View>
-              </LinearGradient>
-            ) : null}
+              </View>
+            </View>
           </View>
 
           <View style={styles.timerWrap}>
             <View style={styles.dialStage}>
-              <HardwareTimerDial
-                size={326}
-                remainingSeconds={remainingSeconds}
-                durationSeconds={countdownDurationSeconds}
-                status={status}
-                isWarning={isWarning}
+              <TimerDial
+                size={TIMER_DIAL_SIZE}
+                progress={dialProgress}
+                remainingTime={dialRemainingTime}
+                visualState={dialVisualState}
+                penaltyCount={penaltyCount}
+                isStill={isStill}
               />
             </View>
 
-            {/* Fixed-height status zone — dial position never shifts between states */}
+            {/* Fixed-height status zone ??dial position never shifts between states */}
             <View style={styles.statusArea}>
+              <MotionSeismographStrip
+                movementLevel={movementLevel}
+                isActive={status === 'running'}
+                isWarning={isWarning || showPenaltyMessage}
+                resetKey={routeSessionId}
+              />
+
               <Animated.View
-                style={[styles.statusLayer, { opacity: statusOpacity }]}
+                style={[styles.statusLayer, { opacity: statusOpacity, transform: [{ translateY: statusTranslateY }] }]}
                 pointerEvents={isSuccess || isEnded ? 'none' : 'box-none'}>
                 <Text
                   style={[
@@ -1211,48 +997,25 @@ export default function TimerScreen() {
                   ]}>
                   {message}
                 </Text>
-                {sessionPurpose && status === 'running' && !isWarning && !showPenaltyMessage ? (
-                  <Text style={styles.purposeTag}>#{sessionPurpose}</Text>
-                ) : null}
               </Animated.View>
 
               <Animated.View
-                style={[styles.resultLayer, { opacity: resultOpacity }]}
+                style={[styles.resultLayer, { opacity: resultOpacity, transform: [{ translateY: resultTranslateY }] }]}
                 pointerEvents={isSuccess || isEnded ? 'auto' : 'none'}>
-                <LinearGradient
-                  colors={['#DEDAD0', '#E3E0D7', '#ECEAE2', '#F4F2EB', '#FDFAF5']}
-                  locations={[0, 0.22, 0.48, 0.76, 1]}
-                  start={{ x: 0.5, y: 0 }}
-                  end={{ x: 0.5, y: 1 }}
-                  style={styles.resultSeat}>
-                  <LinearGradient pointerEvents="none" colors={['rgba(52,47,39,0.18)', 'rgba(52,47,39,0.08)', 'rgba(52,47,39,0.02)', 'rgba(52,47,39,0)']} locations={[0, 0.3, 0.7, 1]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.resultGapTop} />
-                  <LinearGradient pointerEvents="none" colors={['rgba(52,47,39,0.10)', 'rgba(52,47,39,0.04)', 'rgba(52,47,39,0)']} locations={[0, 0.5, 1]} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.resultGapBottom} />
-                  <LinearGradient pointerEvents="none" colors={['rgba(52,47,39,0.10)', 'rgba(52,47,39,0.03)', 'rgba(52,47,39,0)']} locations={[0, 0.5, 1]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.resultGapLeft} />
-                  <LinearGradient pointerEvents="none" colors={['rgba(52,47,39,0.10)', 'rgba(52,47,39,0.03)', 'rgba(52,47,39,0)']} locations={[0, 0.5, 1]} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.resultGapRight} />
-                  <View pointerEvents="none" style={styles.resultCavityShadow} />
-                  <View style={styles.resultField}>
-                    <LinearGradient
-                      pointerEvents="none"
-                      colors={['rgba(17,19,18,0.09)', 'rgba(17,19,18,0.028)', 'rgba(17,19,18,0)']}
-                      locations={[0, 0.4, 1]}
-                      start={{ x: 0.5, y: 0 }}
-                      end={{ x: 0.5, y: 1 }}
-                      style={styles.resultTopShade}
-                    />
-                    <View style={styles.resultContent}>
-                      <View style={styles.resultStatusRow}>
-                        <HardwareLed size="small" isOn tone={isSuccess ? 'sage' : 'orange'} />
-                        <Text style={[styles.resultTitle, isSuccess && styles.successText, isEnded && styles.endedText]}>
-                          {resultTitle.toUpperCase()}
-                        </Text>
-                      </View>
-                      <Text style={[styles.resultValue, isSuccess && styles.successText, isEnded && styles.endedText]}>
-                        +{resultPoints} pts
+                <View style={styles.resultReadout}>
+                  <View style={styles.resultContent}>
+                    <View style={styles.resultStatusRow}>
+                      <HardwareLed size="small" isOn tone={isSuccess ? 'sage' : 'orange'} />
+                      <Text style={[styles.resultTitle, isSuccess && styles.successText, isEnded && styles.endedText]}>
+                        {resultTitle.toUpperCase()}
                       </Text>
-                      {isEnded ? <Text style={styles.resultMeta}>Completed {completedDurationLabel}</Text> : null}
                     </View>
+                    <Text style={[styles.resultValue, isSuccess && styles.successText, isEnded && styles.endedText]}>
+                      +{resultPoints} pts
+                    </Text>
+                    {isEnded ? <Text style={styles.resultMeta}>Completed {completedDurationLabel}</Text> : null}
                   </View>
-                </LinearGradient>
+                </View>
               </Animated.View>
             </View>
           </View>
@@ -1263,7 +1026,7 @@ export default function TimerScreen() {
                 size="medium"
                 onPress={handleFailedPress}
                 surfaceStyle={styles.actionButtonSurface}>
-                <Text style={styles.failButtonText}>I failed</Text>
+                <Text style={styles.failButtonText} numberOfLines={1}>Quit</Text>
               </CeramicButton>
             ) : status === 'loading' ? (
               <View style={styles.actionPlaceholder} />
@@ -1272,7 +1035,7 @@ export default function TimerScreen() {
                 size="medium"
                 onPress={handleHomePress}
                 surfaceStyle={styles.actionButtonSurface}>
-                <Text style={[styles.homeButtonText, isEnded && styles.endedHomeButtonText]}>
+                <Text style={[styles.homeButtonText, isEnded && styles.endedHomeButtonText]} numberOfLines={1}>
                   {resultButtonLabel}
                 </Text>
               </CeramicButton>
@@ -1290,29 +1053,113 @@ const styles = StyleSheet.create({
   },
   bgTintSuccess: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.successSoft,
+    backgroundColor: 'rgba(79,125,112,0.035)',
   },
   bgTintEnded: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.warningSoft,
+    backgroundColor: 'transparent',
   },
   container: {
     flex: 1,
-    paddingHorizontal: spacing.screenPadding,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.lg,
+    paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
+    paddingTop: 0,
+    paddingBottom: spacing.sm,
     justifyContent: 'center',
   },
   devicePanel: {
     flex: 1,
+    width: '100%',
     maxHeight: 590,
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
+    position: 'relative',
+  },
+  decorationLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  speakerGrille: {
+    position: 'absolute',
+    top: SPEAKER_CLUSTER_TOP,
+    width: SPEAKER_CLUSTER_WIDTH,
+    height: SPEAKER_CLUSTER_HEIGHT,
+  },
+  speakerGrilleLeft: {
+    left: SPEAKER_CLUSTER_SIDE_OFFSET,
+  },
+  speakerGrilleCenter: {
+    left: '50%',
+    transform: [{ translateX: -SPEAKER_CLUSTER_WIDTH / 2 }],
+  },
+  speakerGrilleRight: {
+    right: SPEAKER_CLUSTER_SIDE_OFFSET,
+  },
+  speakerHole: {
+    position: 'absolute',
+    width: SPEAKER_HOLE_SIZE,
+    height: SPEAKER_HOLE_SIZE,
+  },
+  decorativeGroove: {
+    position: 'absolute',
+    height: 4,
+    overflow: 'hidden',
+    borderRadius: 999,
+    opacity: 0.48,
+  },
+  decorativeGrooveShade: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    borderRadius: 999,
+    backgroundColor: 'rgba(52,47,39,0.17)',
+  },
+  decorativeGrooveHighlight: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 1,
+    borderRadius: 999,
+    backgroundColor: 'rgba(246,243,236,0.34)',
+  },
+  decorativeGrooveLeft: {
+    left: 2,
+    bottom: 248,
+    width: 52,
+    transform: [{ rotate: '-6deg' }],
+  },
+  decorativeGrooveRight: {
+    right: 4,
+    bottom: 222,
+    width: 44,
+    transform: [{ rotate: '7deg' }],
+  },
+  decorativeGrooveLower: {
+    left: '50%',
+    bottom: 58,
+    width: 86,
+    transform: [{ translateX: -43 }],
+    opacity: 0.34,
+  },
+  decorativeGrooveHeader: {
+    top: HEADER_GROOVE_TOP,
+    left: -SCREEN_HORIZONTAL_PADDING,
+    right: -SCREEN_HORIZONTAL_PADDING,
+    height: HEADER_GROOVE_HEIGHT,
+    opacity: 0.68,
+    backgroundColor: 'rgba(52,47,39,0.045)',
+    shadowColor: '#111312',
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
   },
   panelHeader: {
-    minHeight: 38,
+    height: 42,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    transform: [{ translateY: TIMER_HEADER_TOP_OFFSET }],
   },
   panelLabel: {
     ...typography.panelLabel,
@@ -1321,56 +1168,52 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: -1 },
     textShadowRadius: 0.5,
   },
-  penaltyPillSeat: {
-    borderRadius: 14,
-    padding: 3,
-    position: 'relative',
+  penaltyReadout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    minWidth: 92,
   },
-  penaltyPillContactGap: {
-    position: 'absolute',
-    top: 3, right: 3, bottom: 3, left: 3,
-    borderRadius: 12,
-  },
-  penaltyPillField: {
-    overflow: 'hidden',
-    borderRadius: 10,
-    backgroundColor: '#E4E0D8',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    position: 'relative',
-    zIndex: 1,
-  },
-  penaltyPillTopShade: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0,
-    height: 14,
-  },
-  penaltyPillText: {
+  penaltyReadoutLabel: {
     ...typography.instrumentLabel,
     color: colors.muted,
     textShadowColor: 'rgba(0,0,0,0.16)',
     textShadowOffset: { width: 0, height: -1 },
     textShadowRadius: 0.5,
   },
+  penaltyCounterWindow: {
+    width: 22,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+  },
+  penaltyCounterScale: {
+    transform: [{ scale: 0.66 }],
+  },
   timerWrap: {
+    height: 494,
     alignItems: 'center',
     justifyContent: 'flex-start',
     paddingBottom: 0,
+    transform: [{ translateY: TIMER_BLOCK_OFFSET_Y }],
   },
   dialStage: {
     height: 338,
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
   statusArea: {
-    height: 116,
+    height: 156,
     width: '100%',
     position: 'relative',
   },
   statusLayer: {
     position: 'absolute',
-    top: spacing.xs,
+    top: 108,
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -1394,12 +1237,23 @@ const styles = StyleSheet.create({
   },
   resultLayer: {
     position: 'absolute',
-    top: 0,
+    top: 100,
     left: 0,
     right: 0,
+    height: '100%',
+    justifyContent: 'flex-start',
+  },
+  resultReadout: {
+    width: '100%',
+    maxWidth: 320,
+    alignSelf: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
   },
   resultSeat: {
     width: '100%',
+    maxWidth: 320,
+    alignSelf: 'center',
     borderRadius: RESULT_RADIUS,
     padding: RESULT_INNER_INSET,
     position: 'relative',
@@ -1461,8 +1315,8 @@ const styles = StyleSheet.create({
   },
   resultContent: {
     alignItems: 'center',
-    paddingVertical: 14,
-    gap: 3,
+    paddingTop: 4,
+    gap: 2,
   },
   resultStatusRow: {
     flexDirection: 'row',
@@ -1495,16 +1349,19 @@ const styles = StyleSheet.create({
     textShadowRadius: 0.5,
   },
   actionArea: {
-    height: 64,
+    height: TIMER_ACTION_AREA_HEIGHT,
     justifyContent: 'flex-end',
+    marginTop: 'auto',
+    transform: [{ translateY: TIMER_ACTION_BOTTOM_OFFSET }],
   },
   actionPlaceholder: {
-    height: 52,
+    height: TIMER_ACTION_BUTTON_HEIGHT,
   },
   actionButtonSurface: {
-    minHeight: 52,
+    gap: 5,
     minWidth: 168,
-    paddingHorizontal: spacing.xl,
+    paddingLeft: 0,
+    paddingRight: 12,
   },
   failButtonText: {
     ...typography.button,

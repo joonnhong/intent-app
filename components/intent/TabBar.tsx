@@ -1,218 +1,242 @@
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import {
+  Image,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  type ImageSourcePropType,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HardwareLed } from './HardwareLed';
-import { IconSymbol } from '../ui/icon-symbol';
-import { colors, typography } from '../../constants/theme';
 
-const BAR_HEIGHT = 62;
+type TabRouteName = 'index' | 'recent' | 'session' | 'friends' | 'account';
 
-type TabIconName = 'house.fill' | 'clock.fill' | 'list.bullet.rectangle.fill' | 'person.crop.circle.fill';
-
-const ICON_MAP: Record<string, TabIconName> = {
-  index:   'house.fill',
-  session: 'clock.fill',
-  recent:  'list.bullet.rectangle.fill',
-  account: 'person.crop.circle.fill',
+type TabAssetSet = {
+  defaultImage: ImageSourcePropType;
+  pushedImage: ImageSourcePropType;
 };
+
+const FRAME_HEIGHT = 58;
+const BUTTON_ROW_HEIGHT = 130;
+const BUTTON_SIDE_OVERLAP = -10;
+const BUTTON_ROW_OFFSET_Y = 0.8;
+const NAV_BAR_OFFSET_Y = 4;
+const FRAME_OFFSET_Y = -2;
+const FRAME_HORIZONTAL_OUTSET = 2;
+const FRAME_OPACITY = 0.8;
+const BUTTON_IMAGE_WIDTH = '96%';
+const BUTTON_ASPECT_RATIO = 332 / 224;
+const LED_RING_SIZE = 13;
+const LED_INNER_SIZE = 12;
+const LED_TOP = '13%';
+
+const RECESSED_FRAME = require('../../assets/nav-bar/fixed-recessed.png');
+const TAB_ASSETS: Record<TabRouteName, TabAssetSet> = {
+  index: {
+    defaultImage: require('../../assets/nav-bar/home-default.png'),
+    pushedImage: require('../../assets/nav-bar/home-pushed.png'),
+  },
+  recent: {
+    defaultImage: require('../../assets/nav-bar/recent-default.png'),
+    pushedImage: require('../../assets/nav-bar/recent-pushed.png'),
+  },
+  session: {
+    defaultImage: require('../../assets/nav-bar/session-default.png'),
+    pushedImage: require('../../assets/nav-bar/session-pushed.png'),
+  },
+  friends: {
+    defaultImage: require('../../assets/nav-bar/friends-default.png'),
+    pushedImage: require('../../assets/nav-bar/friends-pushed.png'),
+  },
+  account: {
+    defaultImage: require('../../assets/nav-bar/account-default.png'),
+    pushedImage: require('../../assets/nav-bar/account-pushed.png'),
+  },
+};
+
+function isTabRouteName(name: string): name is TabRouteName {
+  return name in TAB_ASSETS;
+}
+
+function TabLed({ isOn, isPressed, isSession }: { isOn: boolean; isPressed: boolean; isSession: boolean }) {
+  return (
+    <View pointerEvents="none" style={[styles.ledMount, isPressed && styles.ledMountPressed]}>
+      <View style={styles.ledInner}>
+        <HardwareLed isOn={isOn} size="xs" tone="orange" />
+      </View>
+    </View>
+  );
+}
 
 export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const [pressedRouteKey, setPressedRouteKey] = useState<string | null>(null);
 
-  const visibleRoutes = state.routes.filter((route) => route.name in ICON_MAP);
+  const visibleRoutes = state.routes.filter((route) => isTabRouteName(route.name));
+  const safeBottom = Math.max(insets.bottom, 8);
 
   return (
-    <View style={styles.root}>
-      <LinearGradient
-        colors={['#C8C4BA', '#F6F3EC']}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={styles.outer}>
-        {/* Contact shadow along the top lip */}
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(52,47,39,0.30)', 'rgba(52,47,39,0.10)', 'rgba(52,47,39,0.03)', 'rgba(52,47,39,0)']}
-          locations={[0, 0.36, 0.68, 1]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={styles.contactGap}
-        />
-        {/* Cavity shadow */}
-        <View pointerEvents="none" style={styles.cavityShadow} />
-        {/* Inner ceramic field */}
-        <View style={[styles.inner, { paddingBottom: insets.bottom }]}>
-          <LinearGradient
-            pointerEvents="none"
-            colors={['rgba(17,19,18,0.09)', 'rgba(17,19,18,0.02)', 'rgba(17,19,18,0)']}
-            locations={[0, 0.5, 1]}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={styles.innerTopShade}
+    <View pointerEvents="box-none" style={[styles.root, { minHeight: FRAME_HEIGHT + safeBottom, paddingBottom: safeBottom }]}>
+      <View pointerEvents="box-none" style={styles.hardwareFrame}>
+        <View pointerEvents="none" style={styles.recessedFrame}>
+          <Image
+            source={RECESSED_FRAME}
+            resizeMode="stretch"
+            style={styles.recessedFrameImage}
           />
-          {/* Bottom glint */}
-          <LinearGradient
-            pointerEvents="none"
-            colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0)']}
-            locations={[0, 0.22, 0.78, 1]}
-            start={{ x: 0, y: 0.5 }}
-            end={{ x: 1, y: 0.5 }}
-            style={styles.bottomGlint}
-          />
-
-          <View style={styles.tabRow}>
-            {visibleRoutes.map((route, i) => {
-              const isFocused = state.routes[state.index].key === route.key;
-              const label = descriptors[route.key].options.title ?? route.name;
-              const iconName = ICON_MAP[route.name] ?? 'house.fill';
-              const tint = isFocused ? colors.sage : colors.muted;
-
-              const onPress = () => {
-                if (Platform.OS === 'ios') {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }
-                const event = navigation.emit({
-                  type: 'tabPress',
-                  target: route.key,
-                  canPreventDefault: true,
-                });
-                if (!isFocused && !event.defaultPrevented) {
-                  navigation.navigate(route.name as never);
-                }
-              };
-
-              return (
-                <View key={route.key} style={styles.tabItemOuter}>
-                  {i > 0 && (
-                    <View style={styles.divider}>
-                      <View style={styles.divDark} />
-                      <View style={styles.divLight} />
-                    </View>
-                  )}
-                  <Pressable
-                    onPress={onPress}
-                    style={styles.tabItem}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: isFocused }}
-                    accessibilityLabel={typeof label === 'string' ? label : route.name}>
-                    <HardwareLed isOn={isFocused} size="xs" tone="sage" />
-                    <IconSymbol name={iconName} size={22} color={tint} />
-                    <Text style={[styles.tabLabel, { color: tint }]} numberOfLines={1}>
-                      {typeof label === 'string' ? label : route.name}
-                    </Text>
-                  </Pressable>
-                </View>
-              );
-            })}
-          </View>
         </View>
-      </LinearGradient>
+        <View pointerEvents="box-none" style={styles.hardwareStrip}>
+          {visibleRoutes.map((route, index) => {
+            if (!isTabRouteName(route.name)) {
+              return null;
+            }
+
+            const isFocused = state.routes[state.index].key === route.key;
+            const isPressed = pressedRouteKey === route.key;
+            const assets = TAB_ASSETS[route.name];
+            const buttonImage = isPressed ? assets.pushedImage : assets.defaultImage;
+            const label = descriptors[route.key].options.title ?? route.name;
+
+            const onPress = () => {
+              if (Platform.OS === 'ios') {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }
+
+              const event = navigation.emit({
+                type: 'tabPress',
+                target: route.key,
+                canPreventDefault: true,
+              });
+
+              if (!isFocused && !event.defaultPrevented) {
+                navigation.navigate(route.name as never);
+              }
+            };
+
+            return (
+              <View
+                key={route.key}
+                pointerEvents="box-none"
+                style={[
+                  styles.tabSlot,
+                  index > 0 && styles.tabSlotOverlap,
+                ]}>
+                <Pressable
+                  onPressIn={() => setPressedRouteKey(route.key)}
+                  onPressOut={() => setPressedRouteKey((current) => current === route.key ? null : current)}
+                  onPress={onPress}
+                  hitSlop={{ top: 2, bottom: 6, left: 2, right: 2 }}
+                  style={[
+                    styles.tabButton,
+                    isPressed && styles.tabButtonPressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isFocused }}
+                  accessibilityLabel={typeof label === 'string' ? label : route.name}>
+                  <View style={styles.buttonVisual}>
+                    <Image
+                      source={buttonImage}
+                      resizeMode="contain"
+                      style={styles.buttonImageAsset}
+                    />
+                    <TabLed isOn={isFocused} isPressed={isPressed} isSession={route.name === 'session'} />
+                  </View>
+                </Pressable>
+              </View>
+            );
+          })}
+        </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
+    backgroundColor: 'transparent',
+    paddingTop: 0,
     shadowColor: '#111312',
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.20,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: -4 },
     elevation: 10,
+    zIndex: 100,
   },
-  outer: {
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    overflow: 'hidden',
-    paddingTop: 4,
-    paddingHorizontal: 4,
+  hardwareFrame: {
+    height: FRAME_HEIGHT,
+    justifyContent: 'center',
+    marginHorizontal: FRAME_HORIZONTAL_OUTSET,
+    paddingHorizontal: 0,
     position: 'relative',
+    transform: [{ translateY: NAV_BAR_OFFSET_Y }],
+    zIndex: 101,
   },
-  contactGap: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 20,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    zIndex: 2,
+  recessedFrame: {
+    ...StyleSheet.absoluteFillObject,
+    transform: [{ translateY: FRAME_OFFSET_Y }],
+    opacity: FRAME_OPACITY,
   },
-  cavityShadow: {
-    position: 'absolute',
-    top: 1,
-    left: 1,
-    right: 1,
-    bottom: 0,
-    borderTopLeftRadius: 21,
-    borderTopRightRadius: 21,
-    backgroundColor: 'rgba(17,19,18,0.018)',
-    shadowColor: '#111312',
-    shadowOpacity: 0.20,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 1,
+  recessedFrameImage: {
+    width: '100%',
+    height: '100%',
   },
-  inner: {
-    backgroundColor: '#E4E0D8',
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    overflow: 'hidden',
-    position: 'relative',
-    zIndex: 1,
-  },
-  innerTopShade: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 18,
-    zIndex: 2,
-  },
-  bottomGlint: {
-    position: 'absolute',
-    bottom: 1,
-    left: 0,
-    right: 0,
-    height: 1,
-    zIndex: 2,
-  },
-  tabRow: {
-    height: BAR_HEIGHT,
+  hardwareStrip: {
+    height: BUTTON_ROW_HEIGHT,
     flexDirection: 'row',
-    alignItems: 'stretch',
-  },
-  tabItemOuter: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'stretch',
-  },
-  divider: {
-    flexDirection: 'row',
-    alignSelf: 'stretch',
-    marginVertical: 10,
-  },
-  divDark: {
-    width: 1,
-    backgroundColor: 'rgba(17,19,18,0.14)',
-  },
-  divLight: {
-    width: 1,
-    backgroundColor: 'rgba(255,255,255,0.68)',
-  },
-  tabItem: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 8,
-    paddingBottom: 6,
-    gap: 3,
+    paddingHorizontal: 1,
+    transform: [{ translateY: BUTTON_ROW_OFFSET_Y }],
   },
-  tabLabel: {
-    fontFamily: typography.chip.fontFamily,
-    fontSize: 10,
-    lineHeight: 12,
-    letterSpacing: 0.3,
+  tabSlot: {
+    flex: 1,
+    height: BUTTON_ROW_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabSlotOverlap: {
+    marginLeft: BUTTON_SIDE_OVERLAP,
+  },
+  tabButton: {
+    width: BUTTON_IMAGE_WIDTH,
+    aspectRatio: BUTTON_ASPECT_RATIO,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabButtonPressed: {
+    transform: [{ translateY: 1 }],
+  },
+  buttonVisual: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  buttonImageAsset: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  ledMount: {
+    position: 'absolute',
+    top: LED_TOP,
+    width: LED_RING_SIZE,
+    height: LED_RING_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ledMountPressed: {
+    top: '13.4%',
+  },
+  ledInner: {
+    position: 'absolute',
+    width: LED_INNER_SIZE,
+    height: LED_INNER_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -9,7 +9,13 @@ import { CeramicButton } from '../intent/CeramicButton';
 import { EmptyState } from '../intent/EmptyState';
 import { HardwareLed } from '../intent/HardwareLed';
 import { formatPlainDuration, formatSessionDate, formatSessionStatus } from '../intent/format';
-import { colors, spacing, typography } from '../../constants/theme';
+import {
+  OPTICAL_LABEL_INSET,
+  OPTICAL_ROUNDED_OUTSET,
+  SCREEN_HORIZONTAL_PADDING,
+  colors,
+  typography,
+} from '../../constants/theme';
 
 const PANEL_RADIUS = 22;
 const PANEL_GAP_INSET = 4;
@@ -70,6 +76,7 @@ export default function RecentScreen() {
             <Text style={styles.logoBevel} importantForAccessibility="no">Recent</Text>
             <Text style={styles.logo}>Recent</Text>
           </View>
+          <HardwareLed size="medium" tone="orange" />
         </View>
 
         <View style={styles.section}>
@@ -203,7 +210,11 @@ const styles = StyleSheet.create({
   pageList: {
     flex: 1,
   },
-  header: {},
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   logoWrapper: {
     position: 'relative',
   },
@@ -224,7 +235,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: spacing.screenPadding,
+    paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
     paddingTop: 16,
     paddingBottom: 28,
     gap: 14,
@@ -236,6 +247,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginHorizontal: OPTICAL_LABEL_INSET,
   },
   sectionEyebrow: {
     ...typography.panelLabel,
@@ -337,6 +349,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     alignItems: 'stretch',
+    marginHorizontal: -OPTICAL_ROUNDED_OUTSET,
   },
   filterChipSurface: {
     gap: 0,

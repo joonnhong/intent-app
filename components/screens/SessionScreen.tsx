@@ -5,6 +5,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject }
 import {
   Animated,
   Easing,
+  Keyboard,
+  KeyboardAvoidingView,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -23,13 +25,21 @@ import { CeramicButton } from '../intent/CeramicButton';
 import { ConfirmModal } from '../intent/ConfirmModal';
 import { formatDuration, formatTargetTime } from '../intent/format';
 import { HardwareLed } from '../intent/HardwareLed';
-import { colors, spacing, typography } from '../../constants/theme';
+import {
+  OPTICAL_LABEL_INSET,
+  OPTICAL_ROUNDED_OUTSET,
+  SCREEN_HORIZONTAL_PADDING,
+  colors,
+  spacing,
+  typography,
+} from '../../constants/theme';
 
 const MIN_DURATION_MINUTES = 5;
 const MAX_DURATION_MINUTES = 12 * 60;
 const DEFAULT_DURATION_MINUTES = 30;
 const HOUR_OPTIONS = Array.from({ length: 13 }, (_, index) => index);
 const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, index) => index);
+const LOCKED_MAX_MINUTE_OPTIONS = [0];
 const WHEEL_ITEM_HEIGHT = 48;
 const WHEEL_VISIBLE_ITEMS = 5;
 const WHEEL_PICKER_HEIGHT = WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_ITEMS;
@@ -51,6 +61,13 @@ const WHEEL_SELECTED_RADIUS = 14;
 const REWARD_COUNTER_DIGITS = 5;
 const REWARD_COUNTER_MAX = 99999;
 const REWARD_DIGIT_HEIGHT = 30;
+const TIMER_SETTINGS_TOP_PADDING = 14;
+const TIMER_SETTINGS_FORM_GAP = 10;
+const TIMER_SETTINGS_ACTION_GAP = 6;
+const TIMER_SETTINGS_NOTE_HEIGHT = 94;
+const TIMER_SETTINGS_COMPACT_NOTE_HEIGHT = 66;
+const TIMER_SETTINGS_ACTION_TO_NAV_GAP = 42;
+const TIMER_SETTINGS_COMPACT_ACTION_TO_NAV_GAP = 30;
 const PURPOSE_CHIPS = ['Study', 'Work', 'Reading', 'Creative'];
 
 function clampDuration(minutes: number) {
@@ -361,6 +378,10 @@ function RewardDigit({ targetDigit, staggerDelay }: RewardDigitProps) {
   const pendingDuration = useRef(DIGIT_BASE_DURATION);
   const [from, setFrom] = useState(targetDigit);
   const [to, setTo] = useState(targetDigit);
+  const fromRef = useRef(from);
+  const toRef = useRef(to);
+  fromRef.current = from;
+  toRef.current = to;
 
   // Track progress for mid-animation captures; clean up all state on unmount.
   useEffect(() => {
@@ -399,15 +420,18 @@ function RewardDigit({ targetDigit, staggerDelay }: RewardDigitProps) {
     });
   }, [from, to, anim, staggerDelay]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (targetDigit === to) return;
+    const currentFrom = fromRef.current;
+    const currentTo = toRef.current;
+    if (targetDigit === currentTo) return;
     runIdRef.current += 1;
     animRef.current?.stop();
     // Which digit is dominant at the moment of interruption?
-    const visibleDigit = progressRef.current >= 0.5 ? to : from;
+    const visibleDigit = progressRef.current >= 0.5 ? currentTo : currentFrom;
     // Already showing the target visually — snap silently, no animation needed.
     if (visibleDigit === targetDigit) {
+      fromRef.current = targetDigit;
+      toRef.current = targetDigit;
       setFrom(targetDigit);
       setTo(targetDigit);
       return;
@@ -416,10 +440,10 @@ function RewardDigit({ targetDigit, staggerDelay }: RewardDigitProps) {
     const distance = Math.abs(parseInt(targetDigit, 10) - parseInt(visibleDigit, 10));
     pendingDuration.current = DIGIT_BASE_DURATION + distance * 20;
     shouldStartAnim.current = true;
+    fromRef.current = visibleDigit;
+    toRef.current = targetDigit;
     setFrom(visibleDigit);
     setTo(targetDigit);
-    // `from`/`to` intentionally omitted from deps — closure captures latest
-    // values on each targetDigit change; adding them would cause extra runs.
   }, [targetDigit]);
 
   const fromOpacity = anim.interpolate({
@@ -535,12 +559,15 @@ export default function SessionScreen() {
   const isCompact = screenHeight < 750;
   const hourScrollRef = useRef<ScrollView>(null);
   const minuteScrollRef = useRef<ScrollView>(null);
+  const noteComposerInputRef = useRef<TextInput>(null);
   const initialDuration = splitDuration(DEFAULT_DURATION_MINUTES);
   const [selectedHours, setSelectedHours] = useState(initialDuration.hours);
   const [selectedMinutes, setSelectedMinutes] = useState(initialDuration.minutes);
   const [isConfirmVisible, setIsConfirmVisible] = useState(false);
+  const [isNoteComposerVisible, setIsNoteComposerVisible] = useState(false);
   const [sessionNote, setSessionNote] = useState('');
   const [selectedPurpose, setSelectedPurpose] = useState<string | undefined>();
+  const availableMinuteOptions = selectedHours >= 12 ? LOCKED_MAX_MINUTE_OPTIONS : MINUTE_OPTIONS;
   const durationMinutes = clampDuration(selectedHours * 60 + selectedMinutes);
 
   const sessionPreview = useMemo(() => {
@@ -556,9 +583,9 @@ export default function SessionScreen() {
   }, [durationMinutes]);
 
   const updateDuration = (nextHours: number, nextMinutes: number) => {
-    const clampedMinutes = clampDuration(
-      Math.min(12, Math.max(0, nextHours)) * 60 + Math.min(59, Math.max(0, nextMinutes))
-    );
+    const safeHours = Math.min(12, Math.max(0, nextHours));
+    const safeMinutes = safeHours >= 12 ? 0 : Math.min(59, Math.max(0, nextMinutes));
+    const clampedMinutes = clampDuration(safeHours * 60 + safeMinutes);
     const nextDuration = splitDuration(clampedMinutes);
 
     setSelectedHours(nextDuration.hours);
@@ -567,6 +594,26 @@ export default function SessionScreen() {
 
   const togglePurposeChip = (purpose: string) => {
     setSelectedPurpose((currentPurpose) => (currentPurpose === purpose ? undefined : purpose));
+  };
+
+  useEffect(() => {
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      setIsNoteComposerVisible(false);
+    });
+
+    return () => hideSubscription.remove();
+  }, []);
+
+  const handleNoteFocus = () => {
+    setIsNoteComposerVisible(true);
+    requestAnimationFrame(() => {
+      noteComposerInputRef.current?.focus();
+    });
+  };
+
+  const closeNoteComposer = () => {
+    setIsNoteComposerVisible(false);
+    Keyboard.dismiss();
   };
 
   const startSession = () => {
@@ -588,137 +635,210 @@ export default function SessionScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={[styles.container, isCompact && styles.containerCompact]}>
-        <View style={[styles.targetPanel, { gap: isCompact ? spacing.xs : spacing.sm }]}>
-          <View style={[styles.timerZone, { gap: isCompact ? spacing.xs : spacing.sm }]}>
-            <View style={styles.targetReadout}>
-              <Text style={styles.targetLabel}>Target time</Text>
-              <Text style={styles.targetValue}>{sessionPreview.targetTime}</Text>
-            </View>
-
-            <View style={styles.wheelPanel}>
-              <WheelPicker
-                label="HOURS"
-                options={HOUR_OPTIONS}
-                scrollRef={hourScrollRef}
-                selectedValue={selectedHours}
-                onChange={(hour) => updateDuration(hour, selectedMinutes)}
-              />
-
-              <View style={styles.wheelSeparatorWrap}>
-                <Text style={[styles.wheelSeparator, styles.wheelSeparatorHighlight]} importantForAccessibility="no">:</Text>
-                <Text style={[styles.wheelSeparator, styles.wheelSeparatorEngraved]}>:</Text>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+        style={styles.keyboardAvoider}>
+        <View style={[styles.container, isCompact && styles.containerCompact]}>
+          <View style={[styles.targetPanel, { gap: isCompact ? spacing.xs : spacing.sm }]}>
+            <View style={[styles.timerZone, { gap: isCompact ? spacing.xs : spacing.sm }]}>
+              <View style={styles.targetReadout}>
+                <Text style={styles.targetLabel}>Target time</Text>
+                <Text style={styles.targetValue}>{sessionPreview.targetTime}</Text>
               </View>
 
-              <WheelPicker
-                label="MIN"
-                options={MINUTE_OPTIONS}
-                scrollRef={minuteScrollRef}
-                selectedValue={selectedMinutes}
-                onChange={(minute) => updateDuration(selectedHours, minute)}
-              />
+              <View style={styles.wheelPanel}>
+                <WheelPicker
+                  label="HOURS"
+                  options={HOUR_OPTIONS}
+                  scrollRef={hourScrollRef}
+                  selectedValue={selectedHours}
+                  onChange={(hour) => updateDuration(hour, selectedMinutes)}
+                />
+
+                <View style={styles.wheelSeparatorWrap}>
+                  <Text style={[styles.wheelSeparator, styles.wheelSeparatorHighlight]} importantForAccessibility="no">:</Text>
+                  <Text style={[styles.wheelSeparator, styles.wheelSeparatorEngraved]}>:</Text>
+                </View>
+
+                <WheelPicker
+                  label="MIN"
+                  options={availableMinuteOptions}
+                  scrollRef={minuteScrollRef}
+                  selectedValue={selectedMinutes}
+                  onChange={(minute) => updateDuration(selectedHours, minute)}
+                />
+              </View>
             </View>
-          </View>
 
-          <View style={styles.formZone}>
-            <View style={styles.purposeSection}>
-              <Text style={styles.purposeLabel}>Purpose</Text>
-              <View style={styles.purposeCluster}>
-                <View style={styles.purposeChipRow}>
-                  {PURPOSE_CHIPS.map((purpose) => {
-                    const isSelected = selectedPurpose === purpose;
+            <View style={styles.formZone}>
+              <View style={styles.purposeSection}>
+                <Text style={styles.purposeLabel}>Purpose</Text>
+                <View style={styles.purposeCluster}>
+                  <View style={styles.purposeChipRow}>
+                    {PURPOSE_CHIPS.map((purpose) => {
+                      const isSelected = selectedPurpose === purpose;
 
-                    return (
-                      <CeramicButton
-                        key={purpose}
-                        size="small"
-                        onPress={() => togglePurposeChip(purpose)}
-                        surfaceStyle={[styles.purposeChipSurface, isSelected && styles.selectedPurposeChipSurface]}>
-                        <HardwareLed isOn={isSelected} size="small" />
-                        <Text style={[styles.purposeChipText, isSelected && styles.selectedPurposeChipText]}>
-                          #{purpose}
-                        </Text>
-                      </CeramicButton>
-                    );
-                  })}
+                      return (
+                        <CeramicButton
+                          key={purpose}
+                          size="small"
+                          onPress={() => togglePurposeChip(purpose)}
+                          surfaceStyle={[styles.purposeChipSurface, isSelected && styles.selectedPurposeChipSurface]}>
+                          <HardwareLed isOn={isSelected} size="small" />
+                          <Text style={[styles.purposeChipText, isSelected && styles.selectedPurposeChipText]}>
+                            #{purpose}
+                          </Text>
+                        </CeramicButton>
+                      );
+                    })}
+                  </View>
                 </View>
               </View>
-            </View>
 
-            <View style={styles.noteSection}>
-              <Text style={styles.noteLabel}>Note</Text>
-              <LinearGradient
-                colors={['#DEDAD0', '#FDFAF5']}
-                start={{ x: 0.5, y: 0 }}
-                end={{ x: 0.5, y: 1 }}
-                style={[styles.noteSeat, { height: isCompact ? 70 : 100 }]}>
+              <View style={styles.noteSection}>
+                <Text style={styles.noteLabel}>Note</Text>
                 <LinearGradient
-                  pointerEvents="none"
-                  colors={['rgba(52,47,39,0.22)', 'rgba(52,47,39,0.11)', 'rgba(52,47,39,0.036)']}
-                  locations={[0, 0.5, 1]}
+                  colors={['#DEDAD0', '#FDFAF5']}
                   start={{ x: 0.5, y: 0 }}
                   end={{ x: 0.5, y: 1 }}
-                  style={styles.noteContactGap}
-                />
-                <View pointerEvents="none" style={styles.noteCavityShadow} />
-                <View style={styles.noteField}>
+                  style={[
+                    styles.noteSeat,
+                    { height: isCompact ? TIMER_SETTINGS_COMPACT_NOTE_HEIGHT : TIMER_SETTINGS_NOTE_HEIGHT },
+                  ]}>
                   <LinearGradient
                     pointerEvents="none"
-                    colors={['rgba(17,19,18,0.095)', 'rgba(17,19,18,0.032)', 'rgba(17,19,18,0)']}
-                    locations={[0, 0.42, 1]}
+                    colors={['rgba(52,47,39,0.22)', 'rgba(52,47,39,0.11)', 'rgba(52,47,39,0.036)']}
+                    locations={[0, 0.5, 1]}
                     start={{ x: 0.5, y: 0 }}
                     end={{ x: 0.5, y: 1 }}
-                    style={styles.noteTopShade}
+                    style={styles.noteContactGap}
                   />
-                  <LinearGradient
-                    pointerEvents="none"
-                    colors={['rgba(52,47,39,0)', 'rgba(52,47,39,0.04)']}
-                    start={{ x: 0.5, y: 0 }}
-                    end={{ x: 0.5, y: 1 }}
-                    style={styles.noteBottomDepth}
-                  />
-                  <LinearGradient
-                    pointerEvents="none"
-                    colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.2)']}
-                    start={{ x: 0.5, y: 0 }}
-                    end={{ x: 0.5, y: 1 }}
-                    style={styles.noteBottomHighlight}
-                  />
-                  <LinearGradient
-                    pointerEvents="none"
-                    colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0)']}
-                    locations={[0, 0.22, 0.78, 1]}
-                    start={{ x: 0, y: 0.5 }}
-                    end={{ x: 1, y: 0.5 }}
-                    style={styles.noteBottomGlint}
-                  />
-                  <TextInput
-                    multiline
-                    placeholder="Add a note (optional)"
-                    placeholderTextColor="rgba(102,107,103,0.62)"
-                    value={sessionNote}
-                    onChangeText={setSessionNote}
-                    style={styles.noteInput}
-                    textAlignVertical="top"
-                  />
-                </View>
-              </LinearGradient>
+                  <View pointerEvents="none" style={styles.noteCavityShadow} />
+                  <View style={styles.noteField}>
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(17,19,18,0.095)', 'rgba(17,19,18,0.032)', 'rgba(17,19,18,0)']}
+                      locations={[0, 0.42, 1]}
+                      start={{ x: 0.5, y: 0 }}
+                      end={{ x: 0.5, y: 1 }}
+                      style={styles.noteTopShade}
+                    />
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(52,47,39,0)', 'rgba(52,47,39,0.04)']}
+                      start={{ x: 0.5, y: 0 }}
+                      end={{ x: 0.5, y: 1 }}
+                      style={styles.noteBottomDepth}
+                    />
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.2)']}
+                      start={{ x: 0.5, y: 0 }}
+                      end={{ x: 0.5, y: 1 }}
+                      style={styles.noteBottomHighlight}
+                    />
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0)']}
+                      locations={[0, 0.22, 0.78, 1]}
+                      start={{ x: 0, y: 0.5 }}
+                      end={{ x: 1, y: 0.5 }}
+                      style={styles.noteBottomGlint}
+                    />
+                    <TextInput
+                      multiline
+                      placeholder="Add a note (optional)"
+                      placeholderTextColor="rgba(102,107,103,0.62)"
+                      value={sessionNote}
+                      onChangeText={setSessionNote}
+                      onFocus={handleNoteFocus}
+                      style={styles.noteInput}
+                      textAlignVertical="top"
+                    />
+                  </View>
+                </LinearGradient>
+              </View>
             </View>
-          </View>
 
-          <View style={styles.actionZone}>
-            <View style={styles.rewardCard}>
-              <Text style={styles.rewardLabel}>Estimated reward</Text>
-              <RewardCounter rewardPoints={sessionPreview.rewardPoints} />
+            <View style={styles.actionZone}>
+              <View style={styles.rewardCard}>
+                <Text style={styles.rewardLabel}>Estimated reward</Text>
+                <RewardCounter rewardPoints={sessionPreview.rewardPoints} />
+              </View>
+
+              <CeramicButton
+                size="medium"
+                onPress={() => setIsConfirmVisible(true)}
+                hitSlop={{ top: 4, bottom: 16, left: 6, right: 6 }}
+                style={styles.startButtonPressable}
+                surfaceStyle={styles.startButtonSurface}>
+                <HardwareLed size="medium" />
+                <Text style={styles.buttonText}>Start detox</Text>
+              </CeramicButton>
             </View>
-
-            <CeramicButton size="largeCompact" onPress={() => setIsConfirmVisible(true)} surfaceStyle={styles.startButtonSurface}>
-              <HardwareLed size="medium" />
-              <Text style={styles.buttonText}>Start detox</Text>
-            </CeramicButton>
           </View>
         </View>
-      </View>
+
+        {isNoteComposerVisible ? (
+          <View style={styles.noteComposerDock}>
+            <LinearGradient
+              colors={['#DCD7CD', '#FDF9F1']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={styles.noteComposerSeat}>
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(52,47,39,0.22)', 'rgba(52,47,39,0.1)', 'rgba(52,47,39,0.034)']}
+                locations={[0, 0.5, 1]}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={styles.noteComposerContactGap}
+              />
+              <View pointerEvents="none" style={styles.noteComposerCavityShadow} />
+              <View style={styles.noteComposerField}>
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(17,19,18,0.09)', 'rgba(17,19,18,0.026)', 'rgba(17,19,18,0)']}
+                  locations={[0, 0.44, 1]}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={styles.noteComposerTopShade}
+                />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.2)']}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={styles.noteComposerBottomHighlight}
+                />
+                <View style={styles.noteComposerHeader}>
+                  <Text style={styles.noteComposerLabel}>NOTE</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Done editing note"
+                    onPress={closeNoteComposer}
+                    hitSlop={8}
+                    style={styles.noteComposerDone}>
+                    <Text style={styles.noteComposerDoneText}>Done</Text>
+                  </Pressable>
+                </View>
+                <TextInput
+                  ref={noteComposerInputRef}
+                  multiline
+                  scrollEnabled
+                  placeholder="Add a note (optional)"
+                  placeholderTextColor="rgba(102,107,103,0.62)"
+                  value={sessionNote}
+                  onChangeText={setSessionNote}
+                  style={styles.noteComposerInput}
+                  textAlignVertical="top"
+                />
+              </View>
+            </LinearGradient>
+          </View>
+        ) : null}
+      </KeyboardAvoidingView>
 
       <ConfirmModal
         visible={isConfirmVisible}
@@ -739,15 +859,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  keyboardAvoider: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.lg,
+    paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
+    paddingTop: TIMER_SETTINGS_TOP_PADDING,
+    paddingBottom: TIMER_SETTINGS_ACTION_TO_NAV_GAP,
   },
   containerCompact: {
     paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
+    paddingBottom: TIMER_SETTINGS_COMPACT_ACTION_TO_NAV_GAP,
   },
   targetPanel: {
     flex: 1,
@@ -759,12 +882,12 @@ const styles = StyleSheet.create({
   formZone: {
     flex: 0,
     justifyContent: 'flex-start',
-    gap: spacing.md,
+    gap: TIMER_SETTINGS_FORM_GAP,
   },
   actionZone: {
     flex: 0,
     justifyContent: 'flex-start',
-    gap: spacing.sm,
+    gap: TIMER_SETTINGS_ACTION_GAP,
   },
   targetReadout: {
     alignItems: 'center',
@@ -1017,10 +1140,14 @@ const styles = StyleSheet.create({
   purposeSection: {
     gap: 5,
   },
-  purposeCluster: {},
+  purposeCluster: {
+    width: '100%',
+    marginHorizontal: -OPTICAL_ROUNDED_OUTSET,
+  },
   purposeLabel: {
     ...typography.panelLabel,
     color: colors.muted,
+    marginHorizontal: OPTICAL_LABEL_INSET,
     textShadowColor: 'rgba(0,0,0,0.16)',
     textShadowOffset: { width: 0, height: -1 },
     textShadowRadius: 0.5,
@@ -1028,13 +1155,12 @@ const styles = StyleSheet.create({
   purposeChipRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
   },
   purposeChipSurface: {
     gap: 0,
     paddingLeft: 0,
-    paddingRight: 8,
+    paddingRight: 6,
   },
   purposeChipText: {
     ...typography.chip,
@@ -1121,6 +1247,7 @@ const styles = StyleSheet.create({
   noteLabel: {
     ...typography.panelLabel,
     color: colors.muted,
+    marginHorizontal: OPTICAL_LABEL_INSET,
     textShadowColor: 'rgba(0,0,0,0.16)',
     textShadowOffset: { width: 0, height: -1 },
     textShadowRadius: 0.5,
@@ -1134,6 +1261,111 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     paddingVertical: 0,
     zIndex: 1,
+  },
+  noteComposerDock: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 20,
+    paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
+    paddingBottom: spacing.sm,
+  },
+  noteComposerSeat: {
+    borderRadius: 22,
+    padding: 6,
+    position: 'relative',
+  },
+  noteComposerContactGap: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: 20,
+  },
+  noteComposerCavityShadow: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    bottom: 5,
+    left: 5,
+    borderRadius: 19,
+    backgroundColor: 'rgba(17,19,18,0.024)',
+    shadowColor: '#111312',
+    shadowOpacity: 0.2,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  noteComposerField: {
+    minHeight: 128,
+    maxHeight: 168,
+    overflow: 'hidden',
+    borderRadius: 17,
+    backgroundColor: '#E4E0D8',
+    paddingHorizontal: 14,
+    paddingTop: 11,
+    paddingBottom: 12,
+    position: 'relative',
+    zIndex: 1,
+  },
+  noteComposerTopShade: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    left: 0,
+    height: 34,
+  },
+  noteComposerBottomHighlight: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    left: 0,
+    height: 18,
+  },
+  noteComposerHeader: {
+    zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  noteComposerLabel: {
+    ...typography.panelLabel,
+    color: colors.muted,
+    textShadowColor: 'rgba(0,0,0,0.16)',
+    textShadowOffset: { width: 0, height: -1 },
+    textShadowRadius: 0.5,
+  },
+  noteComposerDone: {
+    minHeight: 28,
+    minWidth: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    backgroundColor: 'rgba(246,243,236,0.58)',
+    shadowColor: '#111312',
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  noteComposerDoneText: {
+    ...typography.chip,
+    color: colors.sage,
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  noteComposerInput: {
+    ...typography.body,
+    zIndex: 2,
+    minHeight: 76,
+    maxHeight: 112,
+    color: colors.ink,
+    fontSize: 14,
+    lineHeight: 19,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   rewardCard: {
     alignItems: 'center',
@@ -1261,6 +1493,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingLeft: 0,
     paddingRight: 12,
+  },
+  startButtonPressable: {
+    paddingBottom: 10,
+    marginBottom: -10,
   },
   buttonText: {
     ...typography.button,

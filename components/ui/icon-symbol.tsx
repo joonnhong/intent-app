@@ -17,6 +17,7 @@ const MAPPING = {
   'house.fill': 'home',
   'clock.fill': 'schedule',
   'list.bullet.rectangle.fill': 'format-list-bulleted',
+  'person.2.fill': 'group',
   'person.crop.circle.fill': 'person',
   'paperplane.fill': 'send',
   'gearshape.fill': 'settings',

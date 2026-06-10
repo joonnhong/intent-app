@@ -9,7 +9,13 @@ import { getSessionHistory, getStats, type SessionRecord } from '../../services/
 import { formatPlainDuration } from '../intent/format';
 import { HardwareLed } from '../intent/HardwareLed';
 import { RollingCounter } from '../intent/RollingCounter';
-import { colors, spacing, typography } from '../../constants/theme';
+import {
+  OPTICAL_LABEL_INSET,
+  SCREEN_HORIZONTAL_PADDING,
+  colors,
+  spacing,
+  typography,
+} from '../../constants/theme';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -68,7 +74,6 @@ function formatFocusTime(seconds: number): string {
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
 export default function DashboardScreen() {
-  const [totalPoints, setTotalPoints] = useState(0);
   const [currentStreak, setCurrentStreak] = useState(0);
   const [history, setHistory] = useState<SessionRecord[]>([]);
 
@@ -77,7 +82,6 @@ export default function DashboardScreen() {
       let isActive = true;
       Promise.all([getStats(), getSessionHistory()]).then(([stats, sessions]) => {
         if (isActive) {
-          setTotalPoints(stats.totalPoints);
           setCurrentStreak(stats.currentStreak);
           setHistory(sessions);
         }
@@ -419,7 +423,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
     paddingTop: spacing.lg,
     paddingBottom: spacing.lg,
     gap: 12,
@@ -525,6 +529,7 @@ const styles = StyleSheet.create({
   sectionEyebrow: {
     ...typography.panelLabel,
     color: colors.sage,
+    marginHorizontal: OPTICAL_LABEL_INSET,
     textShadowColor: 'rgba(0,0,0,0.16)',
     textShadowOffset: { width: 0, height: -1 },
     textShadowRadius: 0.5,

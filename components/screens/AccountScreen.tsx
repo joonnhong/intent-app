@@ -21,7 +21,12 @@ import {
 import { EmptyState } from '../intent/EmptyState';
 import { HardwareLed } from '../intent/HardwareLed';
 import { RollingCounter } from '../intent/RollingCounter';
-import { colors, spacing, typography } from '../../constants/theme';
+import {
+  OPTICAL_LABEL_INSET,
+  SCREEN_HORIZONTAL_PADDING,
+  colors,
+  typography,
+} from '../../constants/theme';
 
 // ─── Panel geometry (matches Dashboard / Recent) ─────────────────────────────
 
@@ -284,6 +289,7 @@ export default function AccountScreen() {
             <Text style={styles.logoBevel} importantForAccessibility="no">Account</Text>
             <Text style={styles.logo}>Account</Text>
           </View>
+          <HardwareLed size="medium" tone="orange" />
         </View>
 
         {/* ── Personal Stats ────────────────────────────── */}
@@ -463,14 +469,18 @@ const styles = StyleSheet.create({
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: spacing.screenPadding,
+    paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
     paddingTop: 16,
     paddingBottom: 32,
     gap: 14,
   },
 
   // Header
-  header: {},
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   logoWrapper: {
     position: 'relative',
   },
@@ -508,6 +518,7 @@ const styles = StyleSheet.create({
   sectionEyebrow: {
     ...typography.panelLabel,
     color: colors.sage,
+    marginHorizontal: OPTICAL_LABEL_INSET,
     textShadowColor: 'rgba(0,0,0,0.16)',
     textShadowOffset: { width: 0, height: -1 },
     textShadowRadius: 0.5,
