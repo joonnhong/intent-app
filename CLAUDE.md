@@ -16,7 +16,7 @@ There are no automated tests. Validation is done by running the app on device/si
 
 ## Architecture
 
-**Intent** is an Expo + React Native focus-timer app with a hardware-inspired UI aesthetic (ceramic surfaces, recessed panels, LED indicators, industrial typography).
+**Anchor** is an Expo + React Native focus-timer app with a hardware-inspired UI aesthetic (ceramic surfaces, recessed panels, LED indicators, industrial typography).
 
 ### Routing
 

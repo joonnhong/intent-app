@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useIsFocused } from '@react-navigation/native';
 import { Audio } from 'expo-av';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -34,7 +35,8 @@ import {
 import { SCREEN_HORIZONTAL_PADDING, colors, spacing, typography } from '../../constants/theme';
 
 const ACTIVE_SESSION_KEY = 'intent.activeSession.v1';
-// Set to false before production release so sessions use the selected real duration.
+// Demo/testing shortcut.
+// Set to false before recording a realistic full-duration session.
 const TEST_MODE = true;
 const TEST_DURATION_SECONDS = 10;
 const DEFAULT_DURATION_SECONDS = 30 * 60;
@@ -335,6 +337,7 @@ async function playNotificationHaptic(type: Haptics.NotificationFeedbackType) {
 
 export default function TimerScreen() {
   const router = useRouter();
+  const isTimerFocused = useIsFocused();
   const params = useLocalSearchParams<{
     sessionId?: string;
     durationSeconds?: string;
@@ -676,7 +679,9 @@ export default function TimerScreen() {
   );
 
   useEffect(() => {
-    if (status !== 'running') {
+    if (status !== 'running' || !isTimerFocused) {
+      setIsStill(true);
+      setMovementLevel(0);
       return;
     }
 
@@ -733,7 +738,7 @@ export default function TimerScreen() {
       interactionHandle.cancel();
       subscription?.remove();
     };
-  }, [status]);
+  }, [isTimerFocused, status]);
 
   useEffect(() => {
     return () => {
@@ -755,10 +760,12 @@ export default function TimerScreen() {
   }, []);
 
   useEffect(() => {
-    if (status !== 'running') {
+    if (status !== 'running' || !isTimerFocused) {
       setIsWarning(false);
       setShowPenaltyMessage(false);
       setShowResumedMessage(false);
+      setIsStill(true);
+      setMovementLevel(0);
       hasPlayedWarningEntryHapticRef.current = false;
 
       if (warningTimeoutRef.current) {
@@ -844,7 +851,7 @@ export default function TimerScreen() {
         warningTimeoutRef.current = null;
       }
     };
-  }, [endSessionWithPartialReward, isStill, routeSessionId, status]);
+  }, [endSessionWithPartialReward, isStill, isTimerFocused, routeSessionId, status]);
 
   // Cross-fade between running status and result panel ??no layout shift.
   useEffect(() => {
@@ -953,7 +960,7 @@ export default function TimerScreen() {
           <HardwareDecorations />
 
           <View style={styles.panelHeader}>
-            <Text style={styles.panelLabel}>INTENT FOCUS</Text>
+            <Text style={styles.panelLabel}>ANCHOR FOCUS</Text>
             <View style={styles.penaltyReadout}>
               <Text style={styles.penaltyReadoutLabel}>PENALTY</Text>
               <View style={styles.penaltyCounterWindow}>

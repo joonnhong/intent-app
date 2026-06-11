@@ -21,10 +21,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { calculateRewardPoints } from '../../services/storage';
+import { AnchorRulesModal } from '../intent/AnchorRulesModal';
 import { CeramicButton } from '../intent/CeramicButton';
 import { ConfirmModal } from '../intent/ConfirmModal';
 import { formatDuration, formatTargetTime } from '../intent/format';
 import { HardwareLed } from '../intent/HardwareLed';
+import { InfoButton } from '../intent/InfoButton';
 import {
   OPTICAL_LABEL_INSET,
   OPTICAL_ROUNDED_OUTSET,
@@ -564,6 +566,7 @@ export default function SessionScreen() {
   const [selectedHours, setSelectedHours] = useState(initialDuration.hours);
   const [selectedMinutes, setSelectedMinutes] = useState(initialDuration.minutes);
   const [isConfirmVisible, setIsConfirmVisible] = useState(false);
+  const [isRulesVisible, setIsRulesVisible] = useState(false);
   const [isNoteComposerVisible, setIsNoteComposerVisible] = useState(false);
   const [sessionNote, setSessionNote] = useState('');
   const [selectedPurpose, setSelectedPurpose] = useState<string | undefined>();
@@ -764,6 +767,7 @@ export default function SessionScreen() {
             <View style={styles.actionZone}>
               <View style={styles.rewardCard}>
                 <Text style={styles.rewardLabel}>Estimated reward</Text>
+                <InfoButton style={styles.rewardInfoButton} onPress={() => setIsRulesVisible(true)} />
                 <RewardCounter rewardPoints={sessionPreview.rewardPoints} />
               </View>
 
@@ -850,6 +854,7 @@ export default function SessionScreen() {
         onCancel={() => setIsConfirmVisible(false)}
         onConfirm={startSession}
       />
+      <AnchorRulesModal visible={isRulesVisible} onClose={() => setIsRulesVisible(false)} />
     </SafeAreaView>
   );
 }
@@ -1371,6 +1376,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,
+    position: 'relative',
+  },
+  rewardInfoButton: {
+    position: 'absolute',
+    right: 34,
+    top: 30,
   },
   rewardLabel: {
     ...typography.panelLabel,

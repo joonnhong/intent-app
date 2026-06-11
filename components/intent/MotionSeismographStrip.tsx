@@ -20,11 +20,11 @@ const TRACE_PADDING_X = 9;
 const TRACE_PADDING_Y = 7;
 const NEEDLE_IMAGE_WIDTH = 50;
 const NEEDLE_IMAGE_HEIGHT = NEEDLE_IMAGE_WIDTH / (284 / 36);
-const NEEDLE_RIGHT_INSET = -4;
+const NEEDLE_RIGHT_INSET = -7;
 const NEEDLE_PIVOT_Y = STRIP_HEIGHT / 2;
 const NEEDLE_MAX_ROTATION_DEG = 13;
 const STYLUS_TIP_X = STRIP_WIDTH - NEEDLE_RIGHT_INSET - NEEDLE_IMAGE_WIDTH;
-const TRACE_NEEDLE_INSET = 6;
+const TRACE_NEEDLE_INSET = 2;
 const TRACE_ORIGIN_X = STYLUS_TIP_X + TRACE_NEEDLE_INSET;
 const GRID_VERTICAL_COUNT = 16;
 const GRID_HORIZONTAL_COUNT = 9;
@@ -130,7 +130,7 @@ export function MotionSeismographStrip({
   const glowOpacity = isWarning ? 0.22 : 0.1;
   const tracePoints = createTracePoints(samples);
   const stylusTipY = getTraceY(samples[samples.length - 1] ?? 0);
-  const needleTop = SEAT_PADDING + NEEDLE_PIVOT_Y - NEEDLE_IMAGE_HEIGHT / 2;
+  const needleTop = NEEDLE_PIVOT_Y - NEEDLE_IMAGE_HEIGHT / 2;
   const rawNeedleAngle = Math.asin(
     Math.max(-1, Math.min(1, (NEEDLE_PIVOT_Y - stylusTipY) / NEEDLE_IMAGE_WIDTH))
   ) * (180 / Math.PI);
@@ -225,37 +225,37 @@ export function MotionSeismographStrip({
             end={{ x: 1, y: 0.5 }}
             style={styles.bottomGlint}
           />
+          <Image
+            source={NEEDLE_IMAGE}
+            resizeMode="contain"
+            style={[
+              styles.needleShadow,
+              {
+                top: needleTop + 2,
+                transform: [
+                  { translateX: NEEDLE_IMAGE_WIDTH / 2 },
+                  { rotate: `${needleAngle}deg` },
+                  { translateX: -NEEDLE_IMAGE_WIDTH / 2 },
+                ],
+              },
+            ]}
+          />
+          <Image
+            source={NEEDLE_IMAGE}
+            resizeMode="contain"
+            style={[
+              styles.needleImage,
+              {
+                top: needleTop,
+                transform: [
+                  { translateX: NEEDLE_IMAGE_WIDTH / 2 },
+                  { rotate: `${needleAngle}deg` },
+                  { translateX: -NEEDLE_IMAGE_WIDTH / 2 },
+                ],
+              },
+            ]}
+          />
         </View>
-        <Image
-          source={NEEDLE_IMAGE}
-          resizeMode="contain"
-          style={[
-            styles.needleShadow,
-            {
-              top: needleTop + 2,
-              transform: [
-                { translateX: NEEDLE_IMAGE_WIDTH / 2 },
-                { rotate: `${needleAngle}deg` },
-                { translateX: -NEEDLE_IMAGE_WIDTH / 2 },
-              ],
-            },
-          ]}
-        />
-        <Image
-          source={NEEDLE_IMAGE}
-          resizeMode="contain"
-          style={[
-            styles.needleImage,
-            {
-              top: needleTop,
-              transform: [
-                { translateX: NEEDLE_IMAGE_WIDTH / 2 },
-                { rotate: `${needleAngle}deg` },
-                { translateX: -NEEDLE_IMAGE_WIDTH / 2 },
-              ],
-            },
-          ]}
-        />
       </LinearGradient>
     </View>
   );
@@ -313,14 +313,14 @@ const styles = StyleSheet.create({
   },
   needleImage: {
     position: 'absolute',
-    right: NEEDLE_RIGHT_INSET - SEAT_PADDING,
+    right: NEEDLE_RIGHT_INSET,
     width: NEEDLE_IMAGE_WIDTH,
     height: NEEDLE_IMAGE_HEIGHT,
     zIndex: 6,
   },
   needleShadow: {
     position: 'absolute',
-    right: NEEDLE_RIGHT_INSET - SEAT_PADDING + 1,
+    right: NEEDLE_RIGHT_INSET + 1,
     width: NEEDLE_IMAGE_WIDTH,
     height: NEEDLE_IMAGE_HEIGHT,
     opacity: 0.22,

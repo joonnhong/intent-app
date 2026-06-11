@@ -1,5 +1,5 @@
 import DashboardScreen from '../../components/screens/DashboardScreen';
 
-export default function Index() {
+export default function DashboardRoute() {
   return <DashboardScreen />;
 }

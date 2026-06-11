@@ -25,6 +25,7 @@ export default function RootLayout() {
     <SafeAreaProvider style={{ flex: 1 }}>
       <ThemeProvider value={navigationTheme}>
         <Stack>
+          <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="manage-data" options={{ title: 'Manage data' }} />
         </Stack>

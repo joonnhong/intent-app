@@ -1,13 +1,13 @@
-# Intent — Codebase Research
+# Anchor — Codebase Research
 
-> **Project path:** `hongDev/intent-app/`
+> **Project path:** `hongDev/anchor-app/`
 > **As of:** 2026-05-08
 
 ---
 
 ## 1. What This App Is
 
-**Intent** is a hardware-inspired focus-timer app built with Expo + React Native. The core idea is that digital focus sessions should feel like interacting with a calm, physical precision device rather than a flat SaaS productivity tool.
+**Anchor** is a hardware-inspired focus-timer app built with Expo + React Native. The core idea is that digital focus sessions should feel like interacting with a calm, physical precision device rather than a flat SaaS productivity tool.
 
 Every design decision — layered ceramic shadows, SVG LED indicators, Geist Mono labels, mechanical digit counters — is intentionally referencing Braun / Teenage Engineering aesthetics. The app uses your phone's accelerometer to enforce physical stillness during a session, applying time penalties if you move the device.
 
@@ -37,7 +37,7 @@ Every design decision — layered ceramic shadows, SVG LED indicators, Geist Mon
 ## 3. Project Structure
 
 ```
-hongDev/intent-app/
+hongDev/anchor-app/
 ├── app/
 │   ├── _layout.tsx            Root Stack; loads fonts, sets navigation theme
 │   ├── manage-data.tsx        Data/reset screen (stack-only, not a tab)
@@ -352,7 +352,7 @@ Custom scroll-based picker with settle-to-nearest logic, haptic feedback on tick
 |---|---|---|
 | `intent.stats.v1` | `Stats` | totalPoints, currentStreak, lastSuccessDate |
 | `intent.sessionHistory.v1` | `SessionRecord[]` | Up to 50 records |
-| `intent.inviteCode.v1` | `string` | User's own code (`INTENT-XXXXXX`) |
+| `intent.inviteCode.v1` | `string` | User's own code (`ANCHOR-XXXXXX`; legacy `INTENT-XXXXXX` remains accepted) |
 | `intent.friends.v1` | `Friend[]` | Local-only friend list |
 | `intent.activeSession.v1` | `ActiveSession` | Timer in-progress (backgrounding survival) |
 | `intent.soundEffects.v1` | `'true'` / `'false'` | Sound toggle |
@@ -432,7 +432,7 @@ All 5 achievements are derived dynamically from `(stats, history)` — no stored
 
 ### Friends System (local-only)
 
-Invite code format: `INTENT-` + 6 chars from alphabet `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`.
+Invite code format: `ANCHOR-` + 6 chars from alphabet `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`. Legacy `INTENT-` codes remain accepted for local compatibility.
 
 Mock stats seeded from `charCodeAt` sum of the invite code:
 ```ts

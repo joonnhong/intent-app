@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HardwareLed } from './HardwareLed';
 
-type TabRouteName = 'index' | 'recent' | 'session' | 'friends' | 'account';
+type TabRouteName = 'dashboard' | 'recent' | 'session' | 'friends' | 'account';
 
 type TabAssetSet = {
   defaultImage: ImageSourcePropType;
@@ -36,7 +36,7 @@ const LED_TOP = '13%';
 
 const RECESSED_FRAME = require('../../assets/nav-bar/fixed-recessed.png');
 const TAB_ASSETS: Record<TabRouteName, TabAssetSet> = {
-  index: {
+  dashboard: {
     defaultImage: require('../../assets/nav-bar/home-default.png'),
     pushedImage: require('../../assets/nav-bar/home-pushed.png'),
   },

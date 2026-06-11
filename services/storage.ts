@@ -6,6 +6,8 @@ const INVITE_CODE_KEY = 'intent.inviteCode.v1';
 const FRIENDS_KEY = 'intent.friends.v1';
 const ACTIVE_SESSION_KEY = 'intent.activeSession.v1';
 const SOUND_EFFECTS_KEY = 'intent.soundEffects.v1';
+const INVITE_CODE_PREFIX = 'ANCHOR-';
+const LEGACY_INVITE_CODE_PREFIX = 'INTENT-';
 const MAX_SESSION_HISTORY = 50;
 
 export type SessionHistoryStatus = 'success' | 'partial' | 'ended';
@@ -110,7 +112,7 @@ function createInviteCode(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const suffix = Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
 
-  return `INTENT-${suffix}`;
+  return `${INVITE_CODE_PREFIX}${suffix}`;
 }
 
 function normalizeInviteCode(value: string): string {
@@ -138,7 +140,10 @@ function normalizeFriend(value: Partial<Friend> | null): Friend | null {
 
   const inviteCode = normalizeInviteCode(value.inviteCode);
 
-  if (!inviteCode.startsWith('INTENT-') || inviteCode.length < 10) {
+  if (
+    (!inviteCode.startsWith(INVITE_CODE_PREFIX) && !inviteCode.startsWith(LEGACY_INVITE_CODE_PREFIX)) ||
+    inviteCode.length < 10
+  ) {
     return null;
   }
 
@@ -277,7 +282,10 @@ export async function saveFriends(friends: Friend[]): Promise<void> {
 export async function addFriendByCode(inviteCode: string): Promise<Friend | null> {
   const normalizedCode = normalizeInviteCode(inviteCode);
 
-  if (!normalizedCode.startsWith('INTENT-') || normalizedCode.length < 10) {
+  if (
+    (!normalizedCode.startsWith(INVITE_CODE_PREFIX) && !normalizedCode.startsWith(LEGACY_INVITE_CODE_PREFIX)) ||
+    normalizedCode.length < 10
+  ) {
     return null;
   }
 

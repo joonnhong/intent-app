@@ -1,8 +1,8 @@
-# Intent
+# Anchor
 
-A hardware-inspired focus timer that turns digital focus into a tactile ritual.
+Anchor is a tactile focus timer prototype that turns digital detox into a physical ritual.
 
-Intent is an experimental detox/focus application that explores how physical industrial hardware language can influence digital mindfulness and attention.
+It combines a hardware-inspired timer dial, motion feedback, LEDs, rewards, and a custom navigation system to encourage users to put their phone down and stay anchored.
 
 Instead of using flat productivity UI patterns, the app treats focus sessions like interacting with a calm precision device.
 
@@ -28,7 +28,7 @@ Most productivity apps feel:
 - SaaS-like
 - visually noisy
 
-Intent moves in the opposite direction.
+Anchor moves in the opposite direction.
 
 The interface is inspired by:
 
@@ -175,7 +175,7 @@ _Add screenshots here later._
 Example:
 
 ```md
-![Intent Hero](docs/screenshots/hero.png)
+![Anchor Hero](docs/screenshots/hero.png)
 ```
 
 ---

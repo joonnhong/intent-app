@@ -18,6 +18,7 @@ import {
   type SessionRecord,
   type Stats,
 } from '../../services/storage';
+import { AnchorRulesModal } from '../intent/AnchorRulesModal';
 import { EmptyState } from '../intent/EmptyState';
 import { HardwareLed } from '../intent/HardwareLed';
 import { RollingCounter } from '../intent/RollingCounter';
@@ -208,6 +209,7 @@ export default function AccountScreen() {
   const [friends, setFriends]       = useState<Friend[]>([]);
   const [friendCodeInput, setFriendCodeInput] = useState('');
   const [soundEffectsEnabled, setSoundEffectsEnabled] = useState(true);
+  const [isRulesVisible, setIsRulesVisible] = useState(false);
   const knobAnim = useRef(new Animated.Value(soundEffectsEnabled ? 28 : 0)).current;
 
   useEffect(() => {
@@ -253,12 +255,16 @@ export default function AccountScreen() {
 
   const shareInviteCode = () => {
     if (!inviteCode) return;
-    void Share.share({ message: `Join me on Intent. My invite code is ${inviteCode}` });
+    void Share.share({ message: `Join me on Anchor. My invite code is ${inviteCode}` });
   };
 
   const toggleSoundEffects = (nextValue: boolean) => {
     setSoundEffectsEnabled(nextValue);
     void saveSoundEffectsEnabled(nextValue);
+  };
+
+  const handlePrototypeLogout = () => {
+    router.replace('/');
   };
 
   const addFriend = () => {
@@ -345,7 +351,7 @@ export default function AccountScreen() {
               <View style={styles.inviteCodeBlock}>
                 <Text style={styles.inviteCodeLabel}>Your code</Text>
                 <Text style={styles.inviteCodeText} numberOfLines={1}>
-                  {inviteCode || 'INTENT——'}
+                  {inviteCode || 'ANCHOR——'}
                 </Text>
               </View>
               <ShellButton label="Share" onPress={shareInviteCode} />
@@ -355,7 +361,7 @@ export default function AccountScreen() {
               <TextInput
                 autoCapitalize="characters"
                 autoCorrect={false}
-                placeholder="INTENT-AB12CD"
+                placeholder="ANCHOR-AB12CD"
                 placeholderTextColor="rgba(102,107,103,0.52)"
                 value={friendCodeInput}
                 onChangeText={setFriendCodeInput}
@@ -442,15 +448,32 @@ export default function AccountScreen() {
             <RowDivider />
             <View style={styles.settingRow}>
               <View style={styles.settingCopy}>
+                <Text style={styles.settingTitle}>How Anchor works</Text>
+                <Text style={styles.settingDesc}>Scoring, penalties, movement, and prototype mode.</Text>
+              </View>
+              <ShellButton label="Open" onPress={() => setIsRulesVisible(true)} />
+            </View>
+            <RowDivider />
+            <View style={styles.settingRow}>
+              <View style={styles.settingCopy}>
                 <Text style={styles.settingTitle}>Data & Privacy</Text>
                 <Text style={styles.settingDesc}>Local storage controls and reset options.</Text>
               </View>
               <ShellButton label="Manage" onPress={() => router.push('/manage-data')} />
             </View>
+            <RowDivider />
+            <View style={styles.settingRow}>
+              <View style={styles.settingCopy}>
+                <Text style={styles.settingTitle}>Prototype session</Text>
+                <Text style={styles.settingDesc}>Return to the entry screen without clearing local data.</Text>
+              </View>
+              <ShellButton label="Log out" onPress={handlePrototypeLogout} />
+            </View>
           </RecessedPanel>
         </View>
 
       </ScrollView>
+      <AnchorRulesModal visible={isRulesVisible} onClose={() => setIsRulesVisible(false)} />
     </SafeAreaView>
   );
 }
