@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "Anchor",
+    "name": "ANCHOR",
     "slug": "detox-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/brand/anchor-app-icon.png",
     "scheme": "detoxapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -14,13 +14,13 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#F0EEE9",
+        "foregroundImage": "./assets/brand/anchor-app-icon.png",
+        "monochromeImage": "./assets/brand/anchor-app-icon.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.joonnhong.anchor"
     },
     "web": {
       "output": "static",
