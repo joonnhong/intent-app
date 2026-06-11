@@ -1380,7 +1380,7 @@ const styles = StyleSheet.create({
   },
   rewardInfoButton: {
     position: 'absolute',
-    right: 34,
+    right: 42,
     top: 30,
   },
   rewardLabel: {
