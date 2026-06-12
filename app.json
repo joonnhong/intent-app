@@ -15,8 +15,8 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#F0EEE9",
-        "foregroundImage": "./assets/brand/anchor-app-icon.png",
-        "monochromeImage": "./assets/brand/anchor-app-icon.png"
+        "foregroundImage": "./assets/brand/anchor-app-icon-adaptive-foreground.png",
+        "monochromeImage": "./assets/brand/anchor-app-icon-adaptive-foreground.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -40,7 +40,13 @@
           }
         }
       ],
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "recordAudioAndroid": false,
+          "microphonePermission": false
+        }
+      ],
       "expo-asset"
     ],
     "experiments": {
