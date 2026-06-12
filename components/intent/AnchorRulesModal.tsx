@@ -8,22 +8,22 @@ import { HardwareLed } from './HardwareLed';
 const RULE_SECTIONS = [
   {
     title: 'Focus sessions',
-    body: 'Choose a session length, place your phone down, and let the timer run. Anchor rewards stillness.',
+    body: 'Choose a session length, place your phone down, and let the timer run. Anchor rewards completed stillness.',
     tone: 'sage' as const,
   },
   {
     title: 'Points',
-    body: 'Completing a session earns points. Longer sessions earn more points, and streaks can add extra rewards.',
+    body: 'Completing a session earns the full base reward. Longer sessions scale up, with the base session reward capped at 999 points before streak bonuses.',
     tone: 'sage' as const,
   },
   {
     title: 'Movement',
-    body: 'Picking up or shaking the phone can trigger a warning. Continued movement may lead to a penalty.',
+    body: 'When movement is detected, Anchor starts a warning. If movement continues for 5 seconds, the session receives 1 penalty.',
     tone: 'orange' as const,
   },
   {
     title: 'Penalties',
-    body: 'Penalties track interruptions during a focus session. Fewer penalties mean a cleaner session.',
+    body: 'Each penalty adds 15% of the selected session length to the timer. On the 5th penalty, the session force-ends with partial reward.',
     tone: 'orange' as const,
   },
   {
@@ -90,6 +90,8 @@ export function AnchorRulesModal({ visible, onClose }: AnchorRulesModalProps) {
               </LinearGradient>
             ))}
           </ScrollView>
+
+          <View pointerEvents="none" style={styles.footerBand} />
 
           <CeramicButton size="medium" onPress={onClose} surfaceStyle={styles.closeSurface}>
             <Text style={styles.closeText}>Close</Text>
@@ -190,6 +192,13 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     lineHeight: 18,
+  },
+  footerBand: {
+    height: 1,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+    borderRadius: 1,
+    backgroundColor: colors.background,
   },
   closeSurface: {
     paddingHorizontal: spacing.lg,

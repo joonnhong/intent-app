@@ -64,12 +64,17 @@ const REWARD_COUNTER_DIGITS = 5;
 const REWARD_COUNTER_MAX = 99999;
 const REWARD_DIGIT_HEIGHT = 30;
 const TIMER_SETTINGS_TOP_PADDING = 14;
-const TIMER_SETTINGS_FORM_GAP = 10;
-const TIMER_SETTINGS_ACTION_GAP = 6;
+const TIMER_SETTINGS_FEATURE_GAP = 8;
+const TIMER_SETTINGS_COMPACT_FEATURE_GAP = 5;
+const TIMER_SETTINGS_TINY_FEATURE_GAP = 4;
 const TIMER_SETTINGS_NOTE_HEIGHT = 94;
-const TIMER_SETTINGS_COMPACT_NOTE_HEIGHT = 66;
-const TIMER_SETTINGS_ACTION_TO_NAV_GAP = 42;
-const TIMER_SETTINGS_COMPACT_ACTION_TO_NAV_GAP = 30;
+const TIMER_SETTINGS_COMPACT_NOTE_HEIGHT = 80;
+const TIMER_SETTINGS_TINY_NOTE_HEIGHT = 72;
+const TIMER_SETTINGS_ACTION_TO_NAV_GAP = 24;
+const TIMER_SETTINGS_COMPACT_ACTION_TO_NAV_GAP = 8;
+const TIMER_SETTINGS_SMALL_SCREEN_HEIGHT = 820;
+const TIMER_SETTINGS_TINY_SCREEN_HEIGHT = 700;
+const TIMER_SETTINGS_MIN_WHEEL_SCALE = 0.82;
 const PURPOSE_CHIPS = ['Study', 'Work', 'Reading', 'Creative'];
 
 function clampDuration(minutes: number) {
@@ -558,7 +563,25 @@ function RewardCounter({ rewardPoints }: RewardCounterProps) {
 export default function SessionScreen() {
   const router = useRouter();
   const { height: screenHeight } = useWindowDimensions();
-  const isCompact = screenHeight < 750;
+  const isCompact = screenHeight < TIMER_SETTINGS_SMALL_SCREEN_HEIGHT;
+  const isTiny = screenHeight < TIMER_SETTINGS_TINY_SCREEN_HEIGHT;
+  const wheelScale = isCompact
+    ? Math.max(TIMER_SETTINGS_MIN_WHEEL_SCALE, screenHeight / TIMER_SETTINGS_SMALL_SCREEN_HEIGHT)
+    : 1;
+  const wheelVerticalCompensation = Math.round((WHEEL_SLOT_HEIGHT + spacing.lg) * (1 - wheelScale) * -0.5);
+  const bottomContentPadding = isCompact
+    ? TIMER_SETTINGS_COMPACT_ACTION_TO_NAV_GAP
+    : TIMER_SETTINGS_ACTION_TO_NAV_GAP;
+  const featureGap = isTiny
+    ? TIMER_SETTINGS_TINY_FEATURE_GAP
+    : isCompact
+    ? TIMER_SETTINGS_COMPACT_FEATURE_GAP
+    : TIMER_SETTINGS_FEATURE_GAP;
+  const noteHeight = isTiny
+    ? TIMER_SETTINGS_TINY_NOTE_HEIGHT
+    : isCompact
+    ? TIMER_SETTINGS_COMPACT_NOTE_HEIGHT
+    : TIMER_SETTINGS_NOTE_HEIGHT;
   const hourScrollRef = useRef<ScrollView>(null);
   const minuteScrollRef = useRef<ScrollView>(null);
   const noteComposerInputRef = useRef<TextInput>(null);
@@ -637,152 +660,164 @@ export default function SessionScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
         style={styles.keyboardAvoider}>
-        <View style={[styles.container, isCompact && styles.containerCompact]}>
-          <View style={[styles.targetPanel, { gap: isCompact ? spacing.xs : spacing.sm }]}>
-            <View style={[styles.timerZone, { gap: isCompact ? spacing.xs : spacing.sm }]}>
-              <View style={styles.targetReadout}>
-                <Text style={styles.targetLabel}>Target time</Text>
-                <Text style={styles.targetValue}>{sessionPreview.targetTime}</Text>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          scrollEnabled={false}
+          showsVerticalScrollIndicator={false}
+          style={styles.pageList}
+          contentContainerStyle={[
+            styles.container,
+            isCompact && styles.containerCompact,
+            { paddingBottom: bottomContentPadding },
+          ]}>
+          <View style={[styles.targetPanel, { gap: featureGap }]}>
+            <View style={styles.targetReadout}>
+              <Text style={styles.targetLabel}>Target time</Text>
+              <Text style={[styles.targetValue, isCompact && styles.targetValueCompact, isTiny && styles.targetValueTiny]}>
+                {sessionPreview.targetTime}
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.wheelPanel,
+                wheelScale < 1 && {
+                  marginVertical: wheelVerticalCompensation,
+                  transform: [{ scale: wheelScale }],
+                },
+              ]}>
+              <WheelPicker
+                label="HOURS"
+                options={HOUR_OPTIONS}
+                scrollRef={hourScrollRef}
+                selectedValue={selectedHours}
+                onChange={(hour) => updateDuration(hour, selectedMinutes)}
+              />
+
+              <View style={styles.wheelSeparatorWrap}>
+                <Text style={[styles.wheelSeparator, styles.wheelSeparatorHighlight]} importantForAccessibility="no">:</Text>
+                <Text style={[styles.wheelSeparator, styles.wheelSeparatorEngraved]}>:</Text>
               </View>
 
-              <View style={styles.wheelPanel}>
-                <WheelPicker
-                  label="HOURS"
-                  options={HOUR_OPTIONS}
-                  scrollRef={hourScrollRef}
-                  selectedValue={selectedHours}
-                  onChange={(hour) => updateDuration(hour, selectedMinutes)}
-                />
+              <WheelPicker
+                label="MIN"
+                options={availableMinuteOptions}
+                scrollRef={minuteScrollRef}
+                selectedValue={selectedMinutes}
+                onChange={(minute) => updateDuration(selectedHours, minute)}
+              />
+            </View>
 
-                <View style={styles.wheelSeparatorWrap}>
-                  <Text style={[styles.wheelSeparator, styles.wheelSeparatorHighlight]} importantForAccessibility="no">:</Text>
-                  <Text style={[styles.wheelSeparator, styles.wheelSeparatorEngraved]}>:</Text>
+            <View style={[styles.purposeSection, isTiny && styles.tightSection]}>
+              <Text style={styles.purposeLabel}>Purpose</Text>
+              <View style={styles.purposeCluster}>
+                <View style={styles.purposeChipRow}>
+                  {PURPOSE_CHIPS.map((purpose) => {
+                    const isSelected = selectedPurpose === purpose;
+
+                    return (
+                      <CeramicButton
+                        key={purpose}
+                        size="small"
+                        onPress={() => togglePurposeChip(purpose)}
+                        surfaceStyle={[styles.purposeChipSurface, isSelected && styles.selectedPurposeChipSurface]}>
+                        <HardwareLed isOn={isSelected} size="small" />
+                        <Text style={[styles.purposeChipText, isSelected && styles.selectedPurposeChipText]}>
+                          #{purpose}
+                        </Text>
+                      </CeramicButton>
+                    );
+                  })}
                 </View>
-
-                <WheelPicker
-                  label="MIN"
-                  options={availableMinuteOptions}
-                  scrollRef={minuteScrollRef}
-                  selectedValue={selectedMinutes}
-                  onChange={(minute) => updateDuration(selectedHours, minute)}
-                />
               </View>
             </View>
 
-            <View style={styles.formZone}>
-              <View style={styles.purposeSection}>
-                <Text style={styles.purposeLabel}>Purpose</Text>
-                <View style={styles.purposeCluster}>
-                  <View style={styles.purposeChipRow}>
-                    {PURPOSE_CHIPS.map((purpose) => {
-                      const isSelected = selectedPurpose === purpose;
-
-                      return (
-                        <CeramicButton
-                          key={purpose}
-                          size="small"
-                          onPress={() => togglePurposeChip(purpose)}
-                          surfaceStyle={[styles.purposeChipSurface, isSelected && styles.selectedPurposeChipSurface]}>
-                          <HardwareLed isOn={isSelected} size="small" />
-                          <Text style={[styles.purposeChipText, isSelected && styles.selectedPurposeChipText]}>
-                            #{purpose}
-                          </Text>
-                        </CeramicButton>
-                      );
-                    })}
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.noteSection}>
-                <Text style={styles.noteLabel}>Note</Text>
+            <View style={[styles.noteSection, isTiny && styles.tightSection]}>
+              <Text style={styles.noteLabel}>Note</Text>
+              <LinearGradient
+                colors={['#DEDAD0', '#FDFAF5']}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={[
+                  styles.noteSeat,
+                  { height: noteHeight },
+                ]}>
                 <LinearGradient
-                  colors={['#DEDAD0', '#FDFAF5']}
+                  pointerEvents="none"
+                  colors={['rgba(52,47,39,0.22)', 'rgba(52,47,39,0.11)', 'rgba(52,47,39,0.036)']}
+                  locations={[0, 0.5, 1]}
                   start={{ x: 0.5, y: 0 }}
                   end={{ x: 0.5, y: 1 }}
-                  style={[
-                    styles.noteSeat,
-                    { height: isCompact ? TIMER_SETTINGS_COMPACT_NOTE_HEIGHT : TIMER_SETTINGS_NOTE_HEIGHT },
-                  ]}>
+                  style={styles.noteContactGap}
+                />
+                <View pointerEvents="none" style={styles.noteCavityShadow} />
+                <View style={styles.noteField}>
                   <LinearGradient
                     pointerEvents="none"
-                    colors={['rgba(52,47,39,0.22)', 'rgba(52,47,39,0.11)', 'rgba(52,47,39,0.036)']}
-                    locations={[0, 0.5, 1]}
+                    colors={['rgba(17,19,18,0.095)', 'rgba(17,19,18,0.032)', 'rgba(17,19,18,0)']}
+                    locations={[0, 0.42, 1]}
                     start={{ x: 0.5, y: 0 }}
                     end={{ x: 0.5, y: 1 }}
-                    style={styles.noteContactGap}
+                    style={styles.noteTopShade}
                   />
-                  <View pointerEvents="none" style={styles.noteCavityShadow} />
-                  <View style={styles.noteField}>
-                    <LinearGradient
-                      pointerEvents="none"
-                      colors={['rgba(17,19,18,0.095)', 'rgba(17,19,18,0.032)', 'rgba(17,19,18,0)']}
-                      locations={[0, 0.42, 1]}
-                      start={{ x: 0.5, y: 0 }}
-                      end={{ x: 0.5, y: 1 }}
-                      style={styles.noteTopShade}
-                    />
-                    <LinearGradient
-                      pointerEvents="none"
-                      colors={['rgba(52,47,39,0)', 'rgba(52,47,39,0.04)']}
-                      start={{ x: 0.5, y: 0 }}
-                      end={{ x: 0.5, y: 1 }}
-                      style={styles.noteBottomDepth}
-                    />
-                    <LinearGradient
-                      pointerEvents="none"
-                      colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.2)']}
-                      start={{ x: 0.5, y: 0 }}
-                      end={{ x: 0.5, y: 1 }}
-                      style={styles.noteBottomHighlight}
-                    />
-                    <LinearGradient
-                      pointerEvents="none"
-                      colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0)']}
-                      locations={[0, 0.22, 0.78, 1]}
-                      start={{ x: 0, y: 0.5 }}
-                      end={{ x: 1, y: 0.5 }}
-                      style={styles.noteBottomGlint}
-                    />
-                    <TextInput
-                      multiline
-                      placeholder="Add a note (optional)"
-                      placeholderTextColor="rgba(102,107,103,0.62)"
-                      value={sessionNote}
-                      onChangeText={setSessionNote}
-                      onFocus={handleNoteFocus}
-                      style={styles.noteInput}
-                      textAlignVertical="top"
-                    />
-                  </View>
-                </LinearGradient>
-              </View>
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(52,47,39,0)', 'rgba(52,47,39,0.04)']}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={styles.noteBottomDepth}
+                  />
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.2)']}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={styles.noteBottomHighlight}
+                  />
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0.52)', 'rgba(255,255,255,0)']}
+                    locations={[0, 0.22, 0.78, 1]}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={styles.noteBottomGlint}
+                  />
+                  <TextInput
+                    multiline
+                    placeholder="Add a note (optional)"
+                    placeholderTextColor="rgba(102,107,103,0.62)"
+                    value={sessionNote}
+                    onChangeText={setSessionNote}
+                    onFocus={handleNoteFocus}
+                    style={styles.noteInput}
+                    textAlignVertical="top"
+                  />
+                </View>
+              </LinearGradient>
             </View>
 
-            <View style={styles.actionZone}>
-              <View style={styles.rewardCard}>
-                <Text style={styles.rewardLabel}>Estimated reward</Text>
-                <InfoButton style={styles.rewardInfoButton} onPress={() => setIsRulesVisible(true)} />
-                <RewardCounter rewardPoints={sessionPreview.rewardPoints} />
-              </View>
-
-              <CeramicButton
-                size="medium"
-                onPress={() => setIsConfirmVisible(true)}
-                hitSlop={{ top: 4, bottom: 16, left: 6, right: 6 }}
-                style={styles.startButtonPressable}
-                surfaceStyle={styles.startButtonSurface}>
-                <HardwareLed size="medium" />
-                <Text style={styles.buttonText}>Start detox</Text>
-              </CeramicButton>
+            <View style={[styles.rewardCard, isCompact && styles.rewardCardCompact]}>
+              <Text style={styles.rewardLabel}>Estimated reward</Text>
+              <InfoButton style={styles.rewardInfoButton} onPress={() => setIsRulesVisible(true)} />
+              <RewardCounter rewardPoints={sessionPreview.rewardPoints} />
             </View>
+
+            <CeramicButton
+              size="medium"
+              onPress={() => setIsConfirmVisible(true)}
+              hitSlop={{ top: 4, bottom: 16, left: 6, right: 6 }}
+              style={styles.startButtonPressable}
+              surfaceStyle={styles.startButtonSurface}>
+              <HardwareLed size="medium" />
+              <Text style={styles.buttonText}>Start detox</Text>
+            </CeramicButton>
           </View>
-        </View>
+        </ScrollView>
 
         {isNoteComposerVisible ? (
           <View style={styles.noteComposerDock}>
@@ -867,15 +902,16 @@ const styles = StyleSheet.create({
   keyboardAvoider: {
     flex: 1,
   },
-  container: {
+  pageList: {
     flex: 1,
+  },
+  container: {
+    flexGrow: 1,
     paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
     paddingTop: TIMER_SETTINGS_TOP_PADDING,
-    paddingBottom: TIMER_SETTINGS_ACTION_TO_NAV_GAP,
   },
   containerCompact: {
     paddingTop: spacing.sm,
-    paddingBottom: TIMER_SETTINGS_COMPACT_ACTION_TO_NAV_GAP,
   },
   targetPanel: {
     flex: 1,
@@ -887,12 +923,12 @@ const styles = StyleSheet.create({
   formZone: {
     flex: 0,
     justifyContent: 'flex-start',
-    gap: TIMER_SETTINGS_FORM_GAP,
+    gap: TIMER_SETTINGS_FEATURE_GAP,
   },
   actionZone: {
     flex: 0,
     justifyContent: 'flex-start',
-    gap: TIMER_SETTINGS_ACTION_GAP,
+    gap: TIMER_SETTINGS_FEATURE_GAP,
   },
   targetReadout: {
     alignItems: 'center',
@@ -915,6 +951,15 @@ const styles = StyleSheet.create({
     lineHeight: 40,
     textAlign: 'center',
     letterSpacing: 0,
+  },
+  targetValueCompact: {
+    marginTop: 0,
+    fontSize: 32,
+    lineHeight: 36,
+  },
+  targetValueTiny: {
+    fontSize: 30,
+    lineHeight: 33,
   },
   wheelPanel: {
     flexDirection: 'row',
@@ -1144,6 +1189,9 @@ const styles = StyleSheet.create({
   },
   purposeSection: {
     gap: 5,
+  },
+  tightSection: {
+    gap: 3,
   },
   purposeCluster: {
     width: '100%',
@@ -1377,6 +1425,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,
     position: 'relative',
+  },
+  rewardCardCompact: {
+    paddingVertical: 0,
   },
   rewardInfoButton: {
     position: 'absolute',

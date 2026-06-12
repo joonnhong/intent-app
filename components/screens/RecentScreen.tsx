@@ -50,6 +50,7 @@ function RowDivider() {
 export default function RecentScreen() {
   const [sessions, setSessions]           = useState<SessionRecord[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<SessionFilter>('all');
+  const bottomContentPadding = 68;
 
   useFocusEffect(
     useCallback(() => {
@@ -64,12 +65,12 @@ export default function RecentScreen() {
     : sessions.filter((s) => s.status === selectedFilter);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         style={styles.pageList}
-        contentContainerStyle={styles.container}>
+        contentContainerStyle={[styles.container, { paddingBottom: bottomContentPadding }]}>
 
         <View style={styles.header}>
           <View style={styles.logoWrapper}>
@@ -237,7 +238,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
     paddingTop: 16,
-    paddingBottom: 28,
     gap: 14,
   },
   section: {

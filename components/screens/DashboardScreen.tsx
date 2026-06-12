@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from 'expo-router';
 import { Fragment, useCallback, useMemo, useState, type ReactNode } from 'react';
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Defs, FeGaussianBlur, FeMerge, FeMergeNode, Filter, G, LinearGradient as SvgGradient, Rect as SvgRect, Stop, Svg, Text as SvgText } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -100,10 +100,15 @@ export default function DashboardScreen() {
 
   const today = weekData[6];
   const yesterday = weekData[5];
+  const bottomContentPadding = 64;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        style={styles.pageList}
+        contentContainerStyle={[styles.container, { paddingBottom: bottomContentPadding }]}>
 
         {/* Header */}
         <View style={styles.header}>
@@ -299,7 +304,7 @@ export default function DashboardScreen() {
           </RecessedPanel>
         </View>
 
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -421,11 +426,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  container: {
+  pageList: {
     flex: 1,
+  },
+  container: {
+    flexGrow: 1,
     paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
     paddingTop: spacing.lg,
-    paddingBottom: spacing.lg,
     gap: 12,
   },
 

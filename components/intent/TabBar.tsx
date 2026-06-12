@@ -6,6 +6,7 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  useWindowDimensions,
   View,
   type ImageSourcePropType,
 } from 'react-native';
@@ -33,6 +34,11 @@ const BUTTON_ASPECT_RATIO = 332 / 224;
 const LED_RING_SIZE = 13;
 const LED_INNER_SIZE = 12;
 const LED_TOP = '13%';
+const SHORT_SCREEN_NAV_BASE_HEIGHT = 860;
+const SHORT_SCREEN_NAV_MIN_SCALE = 0.9;
+const SHORT_SCREEN_FRAME_VERTICAL_TRIM = 0.97;
+const NAV_SAFE_BOTTOM_TRIM = 6;
+const NAV_SAFE_BOTTOM_MIN = 4;
 
 const RECESSED_FRAME = require('../../assets/nav-bar/fixed-recessed.png');
 const TAB_ASSETS: Record<TabRouteName, TabAssetSet> = {
@@ -74,14 +80,24 @@ function TabLed({ isOn, isPressed, isSession }: { isOn: boolean; isPressed: bool
 
 export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
   const [pressedRouteKey, setPressedRouteKey] = useState<string | null>(null);
 
   const visibleRoutes = state.routes.filter((route) => isTabRouteName(route.name));
-  const safeBottom = Math.max(insets.bottom, 8);
+  const safeBottom = Math.max(insets.bottom - NAV_SAFE_BOTTOM_TRIM, NAV_SAFE_BOTTOM_MIN);
+  const navScale = screenHeight < SHORT_SCREEN_NAV_BASE_HEIGHT
+    ? Math.max(SHORT_SCREEN_NAV_MIN_SCALE, screenHeight / SHORT_SCREEN_NAV_BASE_HEIGHT)
+    : 1;
+  const frameVerticalScale = screenHeight < SHORT_SCREEN_NAV_BASE_HEIGHT
+    ? navScale * SHORT_SCREEN_FRAME_VERTICAL_TRIM
+    : 1;
+  const frameHeight = Math.round(FRAME_HEIGHT * frameVerticalScale);
+  const buttonRowHeight = Math.round(BUTTON_ROW_HEIGHT * navScale);
+  const buttonImageWidth = screenHeight < SHORT_SCREEN_NAV_BASE_HEIGHT ? '95%' : BUTTON_IMAGE_WIDTH;
 
   return (
-    <View pointerEvents="box-none" style={[styles.root, { minHeight: FRAME_HEIGHT + safeBottom, paddingBottom: safeBottom }]}>
-      <View pointerEvents="box-none" style={styles.hardwareFrame}>
+    <View pointerEvents="box-none" style={[styles.root, { minHeight: frameHeight + safeBottom, paddingBottom: safeBottom }]}>
+      <View pointerEvents="box-none" style={[styles.hardwareFrame, { height: frameHeight }]}>
         <View pointerEvents="none" style={styles.recessedFrame}>
           <Image
             source={RECESSED_FRAME}
@@ -89,7 +105,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
             style={styles.recessedFrameImage}
           />
         </View>
-        <View pointerEvents="box-none" style={styles.hardwareStrip}>
+        <View pointerEvents="box-none" style={[styles.hardwareStrip, { height: buttonRowHeight }]}>
           {visibleRoutes.map((route, index) => {
             if (!isTabRouteName(route.name)) {
               return null;
@@ -123,6 +139,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                 pointerEvents="box-none"
                 style={[
                   styles.tabSlot,
+                  { height: buttonRowHeight },
                   index > 0 && styles.tabSlotOverlap,
                 ]}>
                 <Pressable
@@ -132,6 +149,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                   hitSlop={{ top: 2, bottom: 6, left: 2, right: 2 }}
                   style={[
                     styles.tabButton,
+                    { width: buttonImageWidth },
                     isPressed && styles.tabButtonPressed,
                   ]}
                   accessibilityRole="button"

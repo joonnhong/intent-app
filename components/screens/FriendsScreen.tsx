@@ -30,13 +30,15 @@ function ConceptRow({ label }: { label: string }) {
 }
 
 export default function FriendsScreen() {
+  const bottomContentPadding = 68;
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         style={styles.pageList}
-        contentContainerStyle={styles.container}>
+        contentContainerStyle={[styles.container, { paddingBottom: bottomContentPadding }]}>
         <View style={styles.header}>
           <View style={styles.logoWrapper}>
             <Text style={styles.logoBevel} numberOfLines={1} importantForAccessibility="no">Friends</Text>
@@ -122,7 +124,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
     paddingTop: 16,
-    paddingBottom: 104,
     gap: spacing.xl,
   },
   header: {

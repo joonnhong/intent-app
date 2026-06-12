@@ -14,6 +14,7 @@ import {
   Platform,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
   type StyleProp,
   type ViewStyle,
@@ -52,7 +53,9 @@ const END_SOUND = require('../../assets/sounds/end.mp3');
 const TIMER_ACTION_BUTTON_HEIGHT = 58;
 const TIMER_ACTION_AREA_HEIGHT = 68;
 const TIMER_ACTION_BOTTOM_OFFSET = 46;
-const TIMER_HEADER_TOP_OFFSET = -55;
+const TIMER_ACTION_COMPACT_BOTTOM_OFFSET = 28;
+const TIMER_ACTION_COMPACT_SCREEN_HEIGHT = 820;
+const TIMER_HEADER_TOP_OFFSET = 2;
 const TIMER_BLOCK_OFFSET_Y = 22;
 const RESULT_RADIUS = 20;
 const RESULT_GAP_INSET = 4;
@@ -65,8 +68,7 @@ const SPEAKER_CLUSTER_WIDTH = 104.4;
 const SPEAKER_CLUSTER_HEIGHT = 23.8;
 const SPEAKER_HOLE_SIZE = 4.8;
 const SPEAKER_CLUSTER_PATTERN = [16, 16, 16, 16];
-const HEADER_GROOVE_TO_GRILLE_GAP = 14;
-const SPEAKER_CLUSTER_TOP = HEADER_GROOVE_TOP + HEADER_GROOVE_HEIGHT + HEADER_GROOVE_TO_GRILLE_GAP;
+const SPEAKER_CLUSTER_TOP = -46;
 const SPEAKER_CLUSTER_SIDE_OFFSET = 0;
 const SPEAKER_HOLE_ASSET = require('../../assets/speaker-grille/speaker-hole.png');
 
@@ -366,6 +368,7 @@ async function playNotificationHaptic(type: Haptics.NotificationFeedbackType) {
 export default function TimerScreen() {
   const router = useRouter();
   const isTimerFocused = useIsFocused();
+  const { height: screenHeight } = useWindowDimensions();
   const params = useLocalSearchParams<{
     sessionId?: string;
     durationSeconds?: string;
@@ -995,6 +998,9 @@ export default function TimerScreen() {
     inputRange: [0, 1],
     outputRange: [8, 0],
   });
+  const actionBottomOffset = screenHeight < TIMER_ACTION_COMPACT_SCREEN_HEIGHT
+    ? TIMER_ACTION_COMPACT_BOTTOM_OFFSET
+    : TIMER_ACTION_BOTTOM_OFFSET;
 
   const handleFailedPress = () => {
     void playNotificationHaptic(Haptics.NotificationFeedbackType.Error);
@@ -1006,7 +1012,7 @@ export default function TimerScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
       {/* Animated background tints ??fade in/out independently, no layout impact */}
       <Animated.View pointerEvents="none" style={[styles.bgTintSuccess, { opacity: successTintOpacity }]} />
       <Animated.View pointerEvents="none" style={[styles.bgTintEnded, { opacity: endedTintOpacity }]} />
@@ -1082,7 +1088,7 @@ export default function TimerScreen() {
             </View>
           </View>
 
-          <View style={styles.actionArea}>
+          <View style={[styles.actionArea, { transform: [{ translateY: actionBottomOffset }] }]}>
             {status === 'running' ? (
               <CeramicButton
                 size="medium"
@@ -1299,7 +1305,7 @@ const styles = StyleSheet.create({
   },
   resultLayer: {
     position: 'absolute',
-    top: 100,
+    top: 94,
     left: 0,
     right: 0,
     height: '100%',
@@ -1377,8 +1383,8 @@ const styles = StyleSheet.create({
   },
   resultContent: {
     alignItems: 'center',
-    paddingTop: 4,
-    gap: 2,
+    paddingTop: 0,
+    gap: 0,
   },
   resultStatusRow: {
     flexDirection: 'row',
@@ -1397,7 +1403,7 @@ const styles = StyleSheet.create({
     fontFamily: typography.valueLarge.fontFamily,
     color: 'rgba(17,19,18,0.62)',
     fontSize: 22,
-    marginTop: spacing.xs,
+    marginTop: 0,
     textShadowColor: 'rgba(0,0,0,0.2)',
     textShadowOffset: { width: 0, height: -1 },
     textShadowRadius: 1,
@@ -1405,7 +1411,7 @@ const styles = StyleSheet.create({
   resultMeta: {
     ...typography.meta,
     color: colors.muted,
-    marginTop: spacing.xs,
+    marginTop: 0,
     textShadowColor: 'rgba(0,0,0,0.16)',
     textShadowOffset: { width: 0, height: -1 },
     textShadowRadius: 0.5,
@@ -1414,7 +1420,6 @@ const styles = StyleSheet.create({
     height: TIMER_ACTION_AREA_HEIGHT,
     justifyContent: 'flex-end',
     marginTop: 'auto',
-    transform: [{ translateY: TIMER_ACTION_BOTTOM_OFFSET }],
   },
   actionPlaceholder: {
     height: TIMER_ACTION_BUTTON_HEIGHT,

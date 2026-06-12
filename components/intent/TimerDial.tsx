@@ -230,16 +230,32 @@ function getStatusGlowColor(tone: StatusGlowTone) {
   return colors.muted;
 }
 
+function getProgressTickCount(progress: number, visualState: TimerDialVisualState) {
+  if (visualState === 'success') {
+    return TOTAL_TICKS;
+  }
+
+  if (visualState === 'loading') {
+    return 0;
+  }
+
+  return Math.floor(Math.max(0, Math.min(1, progress)) * TOTAL_TICKS + 1e-6);
+}
+
 function getPointerTargetAngle(progress: number, visualState: TimerDialVisualState) {
+  const activeTickCount = getProgressTickCount(progress, visualState);
+
   if (visualState === 'success') {
     return 360 + POINTER_ANGLE_OFFSET;
   }
 
-  if (visualState === 'loading') {
+  if (activeTickCount <= 0) {
     return POINTER_ANGLE_OFFSET;
   }
 
-  return Math.max(0, Math.min(1, progress)) * 360 + POINTER_ANGLE_OFFSET;
+  const currentTickIndex = activeTickCount - 1;
+
+  return (currentTickIndex / TOTAL_TICKS) * 360 + POINTER_ANGLE_OFFSET;
 }
 
 function StatusGlowOverlay({
@@ -328,7 +344,7 @@ function ProgressTickRing({
   visualState: TimerDialVisualState;
 }) {
   const safeProgress = Math.max(0, Math.min(1, progress));
-  const activeTickCount = visualState === 'success' ? TOTAL_TICKS : visualState === 'loading' ? 0 : Math.floor(safeProgress * TOTAL_TICKS + 1e-6);
+  const activeTickCount = getProgressTickCount(safeProgress, visualState);
   const tickTone = getTickTone(visualState);
   const tickColors = getTickColors(tickTone);
 
@@ -465,6 +481,7 @@ function RotatingTrianglePointer({
   const targetAngle = getPointerTargetAngle(safeProgress, visualState);
   const animatedAngle = useRef(new Animated.Value(targetAngle)).current;
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const animationRunIdRef = useRef(0);
   const pointerTone = getPointerTone(visualState);
   const pointerColors = getPointerColors(pointerTone);
   const animatedRotation = animatedAngle.interpolate({
@@ -484,6 +501,9 @@ function RotatingTrianglePointer({
   const lowerShadePoints = `${TIMER_DIAL_CENTER - innerHalfBase},${innerBaseY} ${TIMER_DIAL_CENTER + innerHalfBase},${innerBaseY} ${TIMER_DIAL_CENTER + halfBase * 0.72},${baseY - 0.4} ${TIMER_DIAL_CENTER - halfBase * 0.72},${baseY - 0.4}`;
 
   useEffect(() => {
+    const runId = animationRunIdRef.current + 1;
+    animationRunIdRef.current = runId;
+
     animationRef.current?.stop();
     animationRef.current = null;
 
@@ -493,6 +513,10 @@ function RotatingTrianglePointer({
     }
 
     animatedAngle.stopAnimation((currentAngle) => {
+      if (animationRunIdRef.current !== runId) {
+        return;
+      }
+
       animatedAngle.setValue(currentAngle);
       const animation = Animated.timing(animatedAngle, {
         toValue: targetAngle,
@@ -503,15 +527,17 @@ function RotatingTrianglePointer({
 
       animationRef.current = animation;
       animation.start(({ finished }) => {
-        if (finished) {
+        if (finished && animationRunIdRef.current === runId) {
           animationRef.current = null;
         }
       });
     });
 
     return () => {
-      animationRef.current?.stop();
-      animationRef.current = null;
+      if (animationRunIdRef.current === runId) {
+        animationRef.current?.stop();
+        animationRef.current = null;
+      }
     };
   }, [animatedAngle, targetAngle, visualState]);
 

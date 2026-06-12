@@ -280,14 +280,15 @@ export default function AccountScreen() {
 
   const unlockedCount  = achievements.filter((a) => a.isUnlocked).length;
   const rankedFriends  = [...friends].sort((a, b) => b.totalPoints - a.totalPoints);
+  const bottomContentPadding = 68;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         style={styles.pageList}
-        contentContainerStyle={styles.container}>
+        contentContainerStyle={[styles.container, { paddingBottom: bottomContentPadding }]}>
 
         {/* ── Header ────────────────────────────────────── */}
         <View style={styles.header}>
@@ -494,7 +495,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
     paddingTop: 16,
-    paddingBottom: 32,
     gap: 14,
   },
 
