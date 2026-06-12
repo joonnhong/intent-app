@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, type AudioStatus } from 'expo-audio';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Accelerometer } from 'expo-sensors';
@@ -29,15 +29,14 @@ import {
   applyPartialRewardAndFailure,
   applySuccess,
   calculateRewardPoints,
+  DEFAULT_TIMER_TEST_MODE_ENABLED,
   getSoundEffectsEnabled,
+  getTimerTestModeEnabled,
   recordSession,
 } from '../../services/storage';
 import { SCREEN_HORIZONTAL_PADDING, colors, spacing, typography } from '../../constants/theme';
 
 const ACTIVE_SESSION_KEY = 'intent.activeSession.v1';
-// Demo/testing shortcut.
-// Set to false before recording a realistic full-duration session.
-const TEST_MODE = true;
 const TEST_DURATION_SECONDS = 10;
 const DEFAULT_DURATION_SECONDS = 30 * 60;
 const STILL_THRESHOLD = 0.08;
@@ -296,13 +295,42 @@ async function playSessionSound(source: number, isEnabled: boolean, soundName?: 
   }
 
   try {
-    const { sound } = await Audio.Sound.createAsync(source, { shouldPlay: true });
+    const player = createAudioPlayer(source, {
+      keepAudioSessionActive: false,
+      updateInterval: 250,
+    });
+    let didRemovePlayer = false;
+    let cleanupTimeout: ReturnType<typeof setTimeout> | undefined;
+    let subscription: { remove: () => void } | undefined;
 
-    sound.setOnPlaybackStatusUpdate((status: { didJustFinish?: boolean }) => {
+    const cleanupPlayer = () => {
+      if (didRemovePlayer) {
+        return;
+      }
+
+      didRemovePlayer = true;
+
+      if (cleanupTimeout) {
+        clearTimeout(cleanupTimeout);
+      }
+
+      subscription?.remove();
+
+      try {
+        player.remove();
+      } catch {
+        // Player cleanup is best-effort for short sound effects.
+      }
+    };
+
+    subscription = player.addListener('playbackStatusUpdate', (status: AudioStatus) => {
       if (status.didJustFinish) {
-        void sound.unloadAsync().catch(() => undefined);
+        cleanupPlayer();
       }
     });
+
+    player.play();
+    cleanupTimeout = setTimeout(cleanupPlayer, 8000);
   } catch (error) {
     if (soundName === 'warning') {
       console.warn('warning sound failed', error);
@@ -355,7 +383,9 @@ export default function TimerScreen() {
     params.rewardPoints,
     calculateRewardPoints(Math.round(paramDurationSeconds / 60))
   );
-  const paramCountdownDurationSeconds = TEST_MODE ? TEST_DURATION_SECONDS : paramDurationSeconds;
+  const [isTestModeEnabled, setIsTestModeEnabled] = useState(DEFAULT_TIMER_TEST_MODE_ENABLED);
+  const [hasLoadedTestMode, setHasLoadedTestMode] = useState(false);
+  const paramCountdownDurationSeconds = isTestModeEnabled ? TEST_DURATION_SECONDS : paramDurationSeconds;
   const rawSessionPurpose = Array.isArray(params.purpose) ? params.purpose[0] : params.purpose;
   const sessionPurpose = typeof rawSessionPurpose === 'string' && rawSessionPurpose.trim().length > 0
     ? rawSessionPurpose.trim()
@@ -522,6 +552,31 @@ export default function TimerScreen() {
 
   useEffect(() => {
     let isMounted = true;
+    setHasLoadedTestMode(false);
+
+    getTimerTestModeEnabled()
+      .then((isEnabled) => {
+        if (isMounted) {
+          setIsTestModeEnabled(isEnabled);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setHasLoadedTestMode(true);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [routeSessionId]);
+
+  useEffect(() => {
+    if (!hasLoadedTestMode) {
+      return;
+    }
+
+    let isMounted = true;
 
     async function initializeSession() {
       const storedSession = await getStoredActiveSession(routeSessionId);
@@ -588,7 +643,7 @@ export default function TimerScreen() {
     return () => {
       isMounted = false;
     };
-  }, [completeSuccess, paramCountdownDurationSeconds, paramDurationSeconds, paramRewardPoints, routeSessionId, sessionNote, sessionPurpose, syncActiveSessionState]);
+  }, [completeSuccess, hasLoadedTestMode, paramCountdownDurationSeconds, paramDurationSeconds, paramRewardPoints, routeSessionId, sessionNote, sessionPurpose, syncActiveSessionState]);
 
   useEffect(() => {
     let isMounted = true;

@@ -1,12 +1,16 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { Fragment, useCallback, useState, type ReactNode } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Alert, Animated, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
+  DEFAULT_TIMER_TEST_MODE_ENABLED,
+  getTimerTestModeEnabled,
   resetAll,
   resetHistory,
   resetStats,
+  saveTimerTestModeEnabled,
 } from '../services/storage';
 import {
   OPTICAL_LABEL_INSET,
@@ -141,6 +145,72 @@ function ShellButton({
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+function ShellToggle({
+  isOn,
+  onPress,
+  disabled,
+}: {
+  isOn: boolean;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  const knobAnim = useRef(new Animated.Value(isOn ? 28 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(knobAnim, {
+      toValue: isOn ? 28 : 0,
+      duration: 170,
+      useNativeDriver: true,
+    }).start();
+  }, [isOn, knobAnim]);
+
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityState={{ checked: isOn, disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      hitSlop={6}
+      style={disabled ? styles.shellToggleDisabled : undefined}>
+      <LinearGradient
+        colors={['#C8C4BA', '#F6F3EC']}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.shellToggleOuter}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(52,47,39,0.30)', 'rgba(52,47,39,0.08)', 'rgba(52,47,39,0.08)', 'rgba(52,47,39,0.24)']}
+          locations={[0, 0.36, 0.64, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.shellToggleContactGap}
+        />
+        <View pointerEvents="none" style={styles.shellToggleCavity} />
+        <View style={[styles.shellToggleTrack, isOn && styles.shellToggleTrackOn]}>
+          <Animated.View style={[styles.shellToggleKnob, { transform: [{ translateX: knobAnim }] }]}>
+            <LinearGradient
+              pointerEvents="none"
+              colors={['#FAF8F3', '#DEDAD2']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(255,255,255,0.62)', 'rgba(255,255,255,0.18)', 'rgba(255,255,255,0)']}
+              locations={[0, 0.38, 1]}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View pointerEvents="none" style={styles.shellToggleKnobBevel} />
+          </Animated.View>
+        </View>
+      </LinearGradient>
+    </Pressable>
+  );
+}
+
 type ResetKey = 'points' | 'streak' | 'history' | 'all';
 
 type ResetAction = {
@@ -193,7 +263,30 @@ const resetActions: ResetAction[] = [
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ManageDataScreen() {
+  const router = useRouter();
   const [isResetting, setIsResetting] = useState(false);
+  const [isTestModeEnabled, setIsTestModeEnabled] = useState(DEFAULT_TIMER_TEST_MODE_ENABLED);
+  const [isLoadingTestMode, setIsLoadingTestMode] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    getTimerTestModeEnabled()
+      .then((isEnabled) => {
+        if (isMounted) {
+          setIsTestModeEnabled(isEnabled);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingTestMode(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const runReset = useCallback(
     async (resetCallback: () => Promise<unknown>) => {
@@ -231,6 +324,12 @@ export default function ManageDataScreen() {
     ]);
   };
 
+  const toggleTestMode = () => {
+    const nextValue = !isTestModeEnabled;
+    setIsTestModeEnabled(nextValue);
+    void saveTimerTestModeEnabled(nextValue);
+  };
+
   const regularActions = resetActions.filter((a) => !a.isDestructive);
   const dangerAction   = resetActions.find((a) => a.isDestructive)!;
 
@@ -244,8 +343,62 @@ export default function ManageDataScreen() {
 
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Data & Privacy</Text>
+          <View style={styles.headerChrome}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              onPress={() => router.back()}
+              hitSlop={8}>
+              {({ pressed }) => (
+                <LinearGradient
+                  colors={['#C8C4BA', '#F6F3EC']}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={styles.backButtonSeat}>
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(52,47,39,0.30)', 'rgba(52,47,39,0.08)', 'rgba(52,47,39,0.08)', 'rgba(52,47,39,0.24)']}
+                    locations={[0, 0.36, 0.64, 1]}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={styles.backButtonContactGap}
+                  />
+                  <View pointerEvents="none" style={styles.backButtonCavity} />
+                  <LinearGradient
+                    colors={['#FAF8F3', '#DEDAD2']}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={[styles.backButtonFace, pressed && styles.backButtonFacePressed]}>
+                    <View pointerEvents="none" style={styles.backChevron}>
+                      <View style={[styles.backChevronStroke, styles.backChevronStrokeTop]} />
+                      <View style={[styles.backChevronStroke, styles.backChevronStrokeBottom]} />
+                    </View>
+                  </LinearGradient>
+                </LinearGradient>
+              )}
+            </Pressable>
+
+            <Text style={styles.title}>Data & Privacy</Text>
+          </View>
           <Text style={styles.subtitle}>All data is stored locally on your device and never sent to a server.</Text>
+        </View>
+
+        {/* Prototype controls */}
+        <View style={styles.section}>
+          <Text style={styles.sectionEyebrow}>Prototype controls</Text>
+          <RecessedPanel>
+            <View style={styles.actionRow}>
+              <View style={styles.actionCopy}>
+                <Text style={styles.actionTitle}>Test mode</Text>
+                <Text style={styles.actionDesc}>Run timer sessions in 10 seconds for quick demos.</Text>
+              </View>
+              <ShellToggle
+                isOn={isTestModeEnabled}
+                onPress={toggleTestMode}
+                disabled={isLoadingTestMode}
+              />
+            </View>
+          </RecessedPanel>
         </View>
 
         {/* Reset options */}
@@ -315,11 +468,92 @@ const styles = StyleSheet.create({
   },
 
   header: {
-    gap: 6,
+    gap: 9,
+  },
+  headerChrome: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  backButtonSeat: {
+    borderRadius: 999,
+    padding: 4,
+    overflow: 'hidden',
+    position: 'relative',
+    marginTop: 7,
+  },
+  backButtonContactGap: {
+    position: 'absolute',
+    top: 3,
+    right: 3,
+    bottom: 3,
+    left: 3,
+    borderRadius: 999,
+  },
+  backButtonCavity: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(17,19,18,0.018)',
+    shadowColor: '#111312',
+    shadowOpacity: 0.14,
+    shadowRadius: 3,
+    shadowOffset: { width: 1, height: 2 },
+    elevation: 1,
+  },
+  backButtonFace: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
+    shadowColor: '#111312',
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  backButtonFacePressed: {
+    transform: [{ translateY: 1 }, { scale: 0.98 }],
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  backChevron: {
+    width: 13,
+    height: 18,
+    justifyContent: 'center',
+    position: 'relative',
+    transform: [{ translateX: -2 }],
+  },
+  backChevronStroke: {
+    position: 'absolute',
+    left: 2,
+    width: 12,
+    height: 3,
+    borderRadius: 999,
+    backgroundColor: colors.sage,
+    shadowColor: '#111312',
+    shadowOpacity: 0.18,
+    shadowRadius: 1.2,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  backChevronStrokeTop: {
+    top: 4,
+    transform: [{ rotate: '-43deg' }],
+  },
+  backChevronStrokeBottom: {
+    bottom: 4,
+    transform: [{ rotate: '43deg' }],
   },
   title: {
     ...typography.screenTitle,
+    flex: 1,
     color: colors.ink,
+    transform: [{ translateY: 2 }],
   },
   subtitle: {
     ...typography.body,
@@ -497,5 +731,68 @@ const styles = StyleSheet.create({
   },
   shellBtnTextDestructive: {
     color: colors.orange,
+  },
+
+  shellToggleDisabled: {
+    opacity: 0.5,
+  },
+  shellToggleOuter: {
+    width: 64,
+    height: 36,
+    borderRadius: 999,
+    padding: 4,
+    overflow: 'hidden',
+    position: 'relative',
+    flexShrink: 0,
+  },
+  shellToggleContactGap: {
+    position: 'absolute',
+    top: 3,
+    right: 3,
+    bottom: 3,
+    left: 3,
+    borderRadius: 999,
+  },
+  shellToggleCavity: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(17,19,18,0.018)',
+    shadowColor: '#111312',
+    shadowOpacity: 0.14,
+    shadowRadius: 3,
+    shadowOffset: { width: 1, height: 2 },
+    elevation: 1,
+  },
+  shellToggleTrack: {
+    flex: 1,
+    borderRadius: 999,
+    backgroundColor: '#BFBBB3',
+    position: 'relative',
+  },
+  shellToggleTrackOn: {
+    backgroundColor: '#6FA49C',
+  },
+  shellToggleKnob: {
+    position: 'absolute',
+    left: 3,
+    top: 3,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  shellToggleKnobBevel: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,255,255,0.22)',
   },
 });

@@ -6,9 +6,11 @@ const INVITE_CODE_KEY = 'intent.inviteCode.v1';
 const FRIENDS_KEY = 'intent.friends.v1';
 const ACTIVE_SESSION_KEY = 'intent.activeSession.v1';
 const SOUND_EFFECTS_KEY = 'intent.soundEffects.v1';
+const TIMER_TEST_MODE_KEY = 'intent.timerTestMode.v1';
 const INVITE_CODE_PREFIX = 'ANCHOR-';
 const LEGACY_INVITE_CODE_PREFIX = 'INTENT-';
 const MAX_SESSION_HISTORY = 50;
+export const DEFAULT_TIMER_TEST_MODE_ENABLED = false;
 
 export type SessionHistoryStatus = 'success' | 'partial' | 'ended';
 
@@ -412,6 +414,24 @@ export async function saveSoundEffectsEnabled(isEnabled: boolean): Promise<void>
   }
 }
 
+export async function getTimerTestModeEnabled(): Promise<boolean> {
+  try {
+    const storedPreference = await AsyncStorage.getItem(TIMER_TEST_MODE_KEY);
+
+    return storedPreference === null ? DEFAULT_TIMER_TEST_MODE_ENABLED : storedPreference === 'true';
+  } catch {
+    return DEFAULT_TIMER_TEST_MODE_ENABLED;
+  }
+}
+
+export async function saveTimerTestModeEnabled(isEnabled: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(TIMER_TEST_MODE_KEY, String(isEnabled));
+  } catch {
+    // Test mode preference should not block the settings screen.
+  }
+}
+
 export async function resetAll(): Promise<void> {
   await Promise.all([
     resetStats(),
@@ -419,6 +439,7 @@ export async function resetAll(): Promise<void> {
     resetFriends(),
     AsyncStorage.removeItem(ACTIVE_SESSION_KEY),
     AsyncStorage.removeItem(SOUND_EFFECTS_KEY),
+    AsyncStorage.removeItem(TIMER_TEST_MODE_KEY),
   ]);
 }
 
